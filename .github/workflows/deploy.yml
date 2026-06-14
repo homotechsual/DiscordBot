@@ -1,0 +1,184 @@
+name: Deploy to Digital Ocean
+
+on:
+  workflow_run:
+    workflows: [".NET CI"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.203'
+  PROJECT_PATH: 'src/HomotechsualBot/HomotechsualBot.csproj'
+  DEPLOY_USER: 'deployer'
+  RUNTIME_USER: 'homotechsualbot'
+  DEPLOY_PATH: '/opt/homotechsualbot'
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.PROJECT_PATH }}
+
+    - name: Build VersionManager (Release)
+      run: dotnet build "$GITHUB_WORKSPACE/tools/VersionManager/VersionManager.csproj" --configuration Release
+    
+    - name: Build
+      run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
+    
+    - name: Publish
+      run: dotnet publish ${{ env.PROJECT_PATH }} --configuration Release --no-build --output ./publish
+    
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        KEY_SECRET_RAW="${{ secrets.DEPLOY_SSH_KEY }}"
+        KEY_SECRET_TRIMMED=$(printf '%s' "$KEY_SECRET_RAW" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        case "$KEY_SECRET_TRIMMED" in
+          \"*\") KEY_SECRET_TRIMMED=${KEY_SECRET_TRIMMED#\"}; KEY_SECRET_TRIMMED=${KEY_SECRET_TRIMMED%\"} ;;
+          \'*\') KEY_SECRET_TRIMMED=${KEY_SECRET_TRIMMED#\'}; KEY_SECRET_TRIMMED=${KEY_SECRET_TRIMMED%\'} ;;
+        esac
+
+        if printf '%s' "$KEY_SECRET_TRIMMED" | grep -q '\\n'; then
+          printf '%b' "$KEY_SECRET_TRIMMED" > ~/.ssh/deploy_key
+        elif printf '%s' "$KEY_SECRET_TRIMMED" | grep -q "BEGIN .* PRIVATE KEY" && printf '%s' "$KEY_SECRET_TRIMMED" | grep -q $'\n'; then
+          printf '%s' "$KEY_SECRET_TRIMMED" > ~/.ssh/deploy_key
+        elif printf '%s' "$KEY_SECRET_TRIMMED" | tr -d '\r\n\t ' | base64 -d > ~/.ssh/deploy_key 2>/dev/null; then
+          :
+        elif printf '%s' "$KEY_SECRET_TRIMMED" | tr -d '\r\n\t ' | tr '_-' '/+' | base64 -d > ~/.ssh/deploy_key 2>/dev/null; then
+          :
+        else
+          echo "Invalid DEPLOY_SSH_KEY format. Provide raw key, escaped \\n key, or base64 key."
+          exit 1
+        fi
+
+        # Normalize potential CRLF and verify we decoded an actual private key (not .pub or wrong file).
+        sed -i 's/\r$//' ~/.ssh/deploy_key
+        if ! grep -q "BEGIN .* PRIVATE KEY" ~/.ssh/deploy_key; then
+          echo "DEPLOY_SSH_KEY decoded, but does not look like a private key. Ensure secret is base64 of the PRIVATE key file, not .pub."
+          exit 1
+        fi
+
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null
+        ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Preflight host permissions
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "sudo -n mkdir -p ${{ env.DEPLOY_PATH }} && sudo -n chown -R ${{ env.DEPLOY_USER }}:${{ env.DEPLOY_USER }} ${{ env.DEPLOY_PATH }} && test -w ${{ env.DEPLOY_PATH }}"
+    
+    - name: Stop bot service
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "sudo -n systemctl stop homotechsualbot.service || true"
+    
+    - name: Deploy files
+      run: |
+        # Preserve runtime SQLite/log files and avoid timestamp writes on runtime-owned files.
+        rsync -avz --no-times --no-group --delete --exclude='*.db' --exclude='*.db-shm' --exclude='*.db-wal' --exclude='logs/' -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          ./publish/ ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
+
+    - name: Deploy systemd service file
+      run: |
+        REMOTE_STAGE="/home/${{ env.DEPLOY_USER }}/homotechsualbot-deploy-staging"
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ${REMOTE_STAGE}"
+        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no .github/deployment/homotechsualbot.service ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${REMOTE_STAGE}/homotechsualbot.service
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "test -s ${REMOTE_STAGE}/homotechsualbot.service && \
+           sudo -n tee /etc/systemd/system/homotechsualbot.service < ${REMOTE_STAGE}/homotechsualbot.service > /dev/null && \
+           sudo -n chown root:root /etc/systemd/system/homotechsualbot.service && \
+           sudo -n chmod 644 /etc/systemd/system/homotechsualbot.service && \
+           rm -f ${REMOTE_STAGE}/homotechsualbot.service && \
+           sudo -n systemctl daemon-reload"
+
+    - name: Deploy journald retention policy
+      run: |
+        REMOTE_STAGE="/home/${{ env.DEPLOY_USER }}/homotechsualbot-deploy-staging"
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ${REMOTE_STAGE}"
+        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no .github/deployment/journald-bot-limits.conf ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${REMOTE_STAGE}/journald-bot-limits.conf
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "sudo -n mkdir -p /etc/systemd/journald.conf.d && \
+           test -s ${REMOTE_STAGE}/journald-bot-limits.conf && \
+           sudo -n tee /etc/systemd/journald.conf.d/60-bot-limits.conf < ${REMOTE_STAGE}/journald-bot-limits.conf > /dev/null && \
+           sudo -n chown root:root /etc/systemd/journald.conf.d/60-bot-limits.conf && \
+           sudo -n chmod 644 /etc/systemd/journald.conf.d/60-bot-limits.conf && \
+           rm -f ${REMOTE_STAGE}/journald-bot-limits.conf && \
+           sudo -n systemctl restart systemd-journald && \
+           sudo -n journalctl --rotate && \
+           sudo -n journalctl --vacuum-time=14d --vacuum-size=500M"
+
+    - name: Write .env file from secrets
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "printf '%s\\n' \
+        'HOMOTECHSUALBOT_Bot__Token=${{ secrets.DISCORD_TOKEN }}' \
+        'HOMOTECHSUALBOT_Bot__GuildId=${{ secrets.GUILD_ID || '1197611845788373052' }}' \
+        'HOMOTECHSUALBOT_Bot__StatusMonitor__Enabled=${{ secrets.STATUS_MONITOR_ENABLED || 'true' }}' \
+        'HOMOTECHSUALBOT_Bot__StatusMonitor__ChannelId=${{ secrets.STATUS_MONITOR_CHANNEL_ID || '0' }}' \
+        'HOMOTECHSUALBOT_Bot__StatusMonitor__RoleId=${{ secrets.STATUS_MONITOR_ROLE_ID || '0' }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__Enabled=${{ secrets.YOUTUBE_MONITOR_ENABLED || 'false' }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__ForumChannelId=${{ secrets.YOUTUBE_FORUM_CHANNEL_ID || '0' }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__RoleId=${{ secrets.YOUTUBE_MONITOR_ROLE_ID || '0' }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__YouTubeDataApiKey=${{ secrets.YOUTUBE_DATA_API_KEY }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__PollIntervalMinutes=${{ secrets.YOUTUBE_POLL_INTERVAL_MINUTES || '15' }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__DefaultPostTitleTemplate=${{ secrets.YOUTUBE_DEFAULT_POST_TITLE_TEMPLATE || '[{ChannelName}] {VideoTitle}' }}' \
+        'HOMOTECHSUALBOT_Bot__YoutubeMonitor__DefaultPostBodyTemplate=${{ secrets.YOUTUBE_DEFAULT_POST_BODY_TEMPLATE || 'New video from **{ChannelName}**\n{VideoUrl}' }}' \
+        'HOMOTECHSUALBOT_Bot__Heartbeat__Enabled=${{ secrets.HEARTBEAT_ENABLED || 'false' }}' \
+        'HOMOTECHSUALBOT_Bot__Heartbeat__PushUrl=${{ secrets.HEARTBEAT_PUSH_URL }}' \
+        'HOMOTECHSUALBOT_Bot__Heartbeat__IntervalSeconds=${{ secrets.HEARTBEAT_INTERVAL_SECONDS || '60' }}' \
+        'HOMOTECHSUALBOT_Bot__Heartbeat__StartupDelaySeconds=${{ secrets.HEARTBEAT_STARTUP_DELAY_SECONDS || '15' }}' \
+        'HOMOTECHSUALBOT_Bot__Heartbeat__TimeoutSeconds=${{ secrets.HEARTBEAT_TIMEOUT_SECONDS || '10' }}' \
+        | sudo -n tee ${{ env.DEPLOY_PATH }}/.env > /dev/null
+        sudo -n chown ${{ env.RUNTIME_USER }}:${{ env.RUNTIME_USER }} ${{ env.DEPLOY_PATH }}/.env
+        sudo -n chmod 600 ${{ env.DEPLOY_PATH }}/.env"
+    
+    - name: Set permissions
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "sudo -n chown -R ${{ env.RUNTIME_USER }}:${{ env.RUNTIME_USER }} ${{ env.DEPLOY_PATH }} && \
+           sudo -n chmod +x ${{ env.DEPLOY_PATH }}/HomotechsualBot"
+    
+    - name: Start bot service
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "sudo -n systemctl start homotechsualbot.service"
+    
+    - name: Check service status
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "ok=0; \
+           for i in \$(seq 1 20); do \
+             ACTIVE=\$(sudo -n systemctl is-active homotechsualbot.service || true); \
+             SUB=\$(sudo -n systemctl show -p SubState --value homotechsualbot.service || true); \
+             echo \"Attempt \$i: active=\$ACTIVE substate=\$SUB\"; \
+             if [ \"\$ACTIVE\" = \"active\" ] && [ \"\$SUB\" = \"running\" ]; then \
+               ok=1; \
+               break; \
+             fi; \
+             sleep 3; \
+           done; \
+           sudo -n systemctl status homotechsualbot.service --no-pager || true; \
+           sudo -n systemctl show homotechsualbot.service -p ActiveState,SubState,ExecMainStatus,ExecMainCode,Result --no-pager || true; \
+           sudo -n journalctl -u homotechsualbot.service -n 200 --no-pager || true; \
+           [ \"\$ok\" -eq 1 ]"
+    
+    - name: Cleanup SSH key
+      if: always()
+      run: rm -f ~/.ssh/deploy_key
+

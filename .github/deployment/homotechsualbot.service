@@ -1,0 +1,33 @@
+[Unit]
+Description=Homotechsual Discord Bot Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homotechsualbot
+Group=homotechsualbot
+WorkingDirectory=/opt/homotechsualbot
+ExecStart=/opt/homotechsualbot/HomotechsualBot
+Restart=on-failure
+RestartSec=5
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homotechsualbot
+
+# Runtime location (installed to non-standard path via dotnet-install.sh)
+Environment=DOTNET_ROOT=/usr/local/dotnet
+
+# Bot secrets / config overrides
+EnvironmentFile=/opt/homotechsualbot/.env
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/homotechsualbot
+
+[Install]
+WantedBy=multi-user.target
+

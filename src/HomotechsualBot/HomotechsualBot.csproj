@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>HomotechsualBot</RootNamespace>
+    <AssemblyName>HomotechsualBot</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>ca866cec-4adc-4fb2-b01f-ffc1982d3939</UserSecretsId>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Discord.Net"/>
+    <PackageReference Include="Microsoft.EntityFrameworkCore"/>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite"/>
+    <PackageReference Include="Serilog"/>
+    <PackageReference Include="Serilog.Extensions.Hosting"/>
+    <PackageReference Include="Serilog.Sinks.Console"/>
+    <PackageReference Include="Serilog.Sinks.File"/>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design"/>
+    <PackageReference Include="prometheus-net"/>
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.Development.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Attributes\"/>
+    <Folder Include="Utils\"/>
+  </ItemGroup>
+  <Target Name="ValidateVersionConsistency" AfterTargets="Build">
+    <PropertyGroup>
+      <RepoRoot>$(MSBuildThisFileDirectory)../..</RepoRoot>
+      <RepoRootNormalized>$([System.IO.Path]::GetFullPath(&apos;$(RepoRoot)&apos;))</RepoRootNormalized>
+      <VersionManagerPath>$(RepoRootNormalized)/artifacts/bin/VersionManager/release/VersionManager.dll</VersionManagerPath>
+    </PropertyGroup>
+    <Message Text="Validating version consistency from: $(RepoRootNormalized)" Importance="high"/>
+    <Exec Command="dotnet &quot;$(VersionManagerPath)&quot; validate" WorkingDirectory="$(RepoRootNormalized)" ContinueOnError="false"/>
+  </Target>
+</Project>

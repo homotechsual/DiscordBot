@@ -1,0 +1,61 @@
+name: .NET CI
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'src/**'
+      - 'tools/**'
+      - '**/*.sh'
+      - '.github/workflows/dotnet.yml'
+      - '!**/*.md'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/**'
+      - 'tools/**'
+      - '**/*.sh'
+      - '.github/workflows/dotnet.yml'
+      - '!**/*.md'
+
+jobs:
+  build:
+    name: ${{ matrix.job-name }}
+    continue-on-error: ${{ matrix.experimental }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dotnet-version: '9.0.313'
+            experimental: true
+            job-name: '.NET 9 (legacy / back-compat)'
+          - dotnet-version: '10.0.203'
+            experimental: false
+            job-name: '.NET 10 (primary)'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup ${{ matrix.job-name }} SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ matrix.dotnet-version }}
+
+      - name: Remove global.json for legacy back-compat leg
+        if: ${{ matrix.experimental }}
+        run: rm -f global.json
+
+      - name: Restore dependencies (${{ matrix.job-name }})
+        run: dotnet restore src/HomotechsualBot/HomotechsualBot.csproj
+
+      - name: Build VersionManager (Release)
+        run: dotnet build "$GITHUB_WORKSPACE/tools/VersionManager/VersionManager.csproj" --configuration Release
+
+      - name: Build (${{ matrix.job-name }})
+        run: dotnet build src/HomotechsualBot/HomotechsualBot.csproj --configuration Release --no-restore
+
+      # - name: Test
+      #   run: dotnet test tests/HomotechsualBot.Tests --no-build --verbosity normal
+
