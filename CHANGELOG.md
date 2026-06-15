@@ -5,6 +5,14 @@ All notable changes to HomotechsualBot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-06-15
+
+### Fixed
+
+* Status monitor no longer enables itself by default when `STATUS_MONITOR_ENABLED` secret is absent — deploy workflow default changed from `true` to `false`
+* Removed hardcoded Halo Services Solutions feed URL from `StatusMonitorConfig` default; `FeedUrl` now defaults to empty so misconfigured deployments fail clearly
+* Deploy workflows for all four bots now include `ModerationLog` and `CrossChannelSpam` environment variables
+
 ## [1.0.0] - 2026-06-14
 
 ### Added

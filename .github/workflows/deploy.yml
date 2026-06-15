@@ -129,7 +129,7 @@ jobs:
           "printf '%s\\n' \
         'HOMOTECHSUALBOT_Bot__Token=${{ secrets.DISCORD_TOKEN }}' \
         'HOMOTECHSUALBOT_Bot__GuildId=${{ secrets.GUILD_ID || '1197611845788373052' }}' \
-        'HOMOTECHSUALBOT_Bot__StatusMonitor__Enabled=${{ secrets.STATUS_MONITOR_ENABLED || 'true' }}' \
+        'HOMOTECHSUALBOT_Bot__StatusMonitor__Enabled=${{ secrets.STATUS_MONITOR_ENABLED || 'false' }}' \
         'HOMOTECHSUALBOT_Bot__StatusMonitor__ChannelId=${{ secrets.STATUS_MONITOR_CHANNEL_ID || '0' }}' \
         'HOMOTECHSUALBOT_Bot__StatusMonitor__RoleId=${{ secrets.STATUS_MONITOR_ROLE_ID || '0' }}' \
         'HOMOTECHSUALBOT_Bot__YoutubeMonitor__Enabled=${{ secrets.YOUTUBE_MONITOR_ENABLED || 'false' }}' \
@@ -144,6 +144,11 @@ jobs:
         'HOMOTECHSUALBOT_Bot__Heartbeat__IntervalSeconds=${{ secrets.HEARTBEAT_INTERVAL_SECONDS || '60' }}' \
         'HOMOTECHSUALBOT_Bot__Heartbeat__StartupDelaySeconds=${{ secrets.HEARTBEAT_STARTUP_DELAY_SECONDS || '15' }}' \
         'HOMOTECHSUALBOT_Bot__Heartbeat__TimeoutSeconds=${{ secrets.HEARTBEAT_TIMEOUT_SECONDS || '10' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__ForumChannelId=${{ secrets.MODERATION_LOG_FORUM_CHANNEL_ID || '0' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId=${{ secrets.MODERATION_LOG_MODERATOR_ROLE_ID || '0' }}' \
+        'HOMOTECHSUALBOT_CrossChannelSpam__Enabled=${{ secrets.CROSS_CHANNEL_SPAM_ENABLED || 'false' }}' \
+        'HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=${{ secrets.CROSS_CHANNEL_SPAM_TIME_WINDOW_SECONDS || '30' }}' \
+        'HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=${{ secrets.CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT || '3' }}' \
         | sudo -n tee ${{ env.DEPLOY_PATH }}/.env > /dev/null
         sudo -n chown ${{ env.RUNTIME_USER }}:${{ env.RUNTIME_USER }} ${{ env.DEPLOY_PATH }}/.env
         sudo -n chmod 600 ${{ env.DEPLOY_PATH }}/.env"
