@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Status monitor no longer enables itself by default when `STATUS_MONITOR_ENABLED` secret is absent — deploy workflow default changed from `true` to `false`
 * Removed hardcoded Halo Services Solutions feed URL from `StatusMonitorConfig` default; `FeedUrl` now defaults to empty so misconfigured deployments fail clearly
 * Deploy workflows for all four bots now include `ModerationLog` and `CrossChannelSpam` environment variables
+* Fixed Metrics port conflict: `appsettings.json` now uses port `9094` (Metrics) and `9194` (FeedUrlsPort) instead of `9092`/`9192` which conflicted with HuduCommunityBot
 
 ## [1.0.0] - 2026-06-14
 
