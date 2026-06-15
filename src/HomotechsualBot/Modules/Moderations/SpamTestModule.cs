@@ -56,7 +56,7 @@ public class SpamTestModule : InteractionModuleBase<SocketInteractionContext>
             else
             {
                 embed.AddField("⚠️ Detection Disabled",
-                    "Set `CROSS_CHANNEL_SPAM_ENABLED=true` in the GitHub secret and redeploy to activate.");
+                    "Set `CROSS_CHANNEL_SPAM_ENABLED=true` in config/secrets and redeploy to activate.");
             }
         }
         else
@@ -66,5 +66,58 @@ public class SpamTestModule : InteractionModuleBase<SocketInteractionContext>
         }
 
         await RespondAsync(embed: embed.Build(), ephemeral: true);
+    }
+
+    [SlashCommand("live-test", "Post identical test messages to channels and verify real detector behavior")]
+    public async Task LiveTestAsync(
+        [Summary("content", "Message text to post in each channel")] string content,
+        [Summary("channel1", "First channel to post to")] ITextChannel channel1,
+        [Summary("channel2", "Second channel to post to")] ITextChannel channel2,
+        [Summary("channel3", "Optional third channel")] ITextChannel? channel3 = null,
+        [Summary("channel4", "Optional fourth channel")] ITextChannel? channel4 = null)
+    {
+        await DeferAsync(ephemeral: true);
+
+        var channels = new[] { channel1, channel2, channel3, channel4 }
+            .OfType<ITextChannel>()
+            .DistinctBy(c => c.Id)
+            .ToList();
+
+        var status = _detector.GetStatus();
+        if (!status.Enabled)
+        {
+            await FollowupAsync(
+                "❌ Cross-channel spam detection is disabled. Enable `CrossChannelSpam:Enabled` (or `CROSS_CHANNEL_SPAM_ENABLED=true`) before running a live test.",
+                ephemeral: true);
+            return;
+        }
+
+        if (channels.Count < 2)
+        {
+            await FollowupAsync("❌ Choose at least 2 distinct channels.", ephemeral: true);
+            return;
+        }
+
+        if (channels.Count < status.MinimumChannelCount)
+        {
+            await FollowupAsync(
+                $"⚠️ Detector requires {status.MinimumChannelCount} channels, but only {channels.Count} were provided. Add more channels for a guaranteed trigger.",
+                ephemeral: true);
+        }
+
+        var result = await _detector.RunLiveSelfTestAsync(Context.Guild, channels, content);
+
+        var embed = new EmbedBuilder()
+            .WithTitle("Spam Detection Live Test")
+            .WithColor(result.Detected ? Color.Green : Color.Orange)
+            .AddField("Detected", result.Detected ? "✅ Yes" : "❌ No", inline: true)
+            .AddField("Posted Channels", result.PostedChannels.ToString(), inline: true)
+            .AddField("Matched Channels", result.MatchedChannels.ToString(), inline: true)
+            .AddField("Cleanup", result.CleanupErrors == 0 ? "✅ Test messages cleaned up" : $"⚠️ Cleanup errors: {result.CleanupErrors}", inline: true)
+            .AddField("Fingerprint", string.IsNullOrEmpty(result.Fingerprint) ? "(empty)" : $"`{result.Fingerprint}`")
+            .AddField("Message", result.Message)
+            .WithFooter("This self-test bypasses punitive enforcement and only verifies detection matching.");
+
+        await FollowupAsync(embed: embed.Build(), ephemeral: true);
     }
 }

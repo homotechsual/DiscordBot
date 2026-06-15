@@ -3,11 +3,14 @@ using Discord;
 using Discord.WebSocket;
 using DiscordBot.Models;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
 
 namespace DiscordBot.Services;
 
 public sealed class CrossChannelSpamDetector : IDisposable
 {
+    private const string SelfTestPrefix = "[SPAM-SELF-TEST:";
+
     private readonly DiscordSocketClient _client;
     private readonly CrossChannelSpamConfig _config;
     private readonly ModerationExemptionService _exemptionService;
@@ -34,48 +37,134 @@ public sealed class CrossChannelSpamDetector : IDisposable
 
     public async Task HandleMessageAsync(SocketMessage rawMessage)
     {
-        if (!_config.Enabled) return;
+        if (!_config.Enabled)
+        {
+            _logger.LogDebug("Spam detector skipped message because detection is disabled");
+            return;
+        }
+
         if (rawMessage is not SocketUserMessage message) return;
-        if (message.Author.IsBot) return;
+
+        var isSelfTest = IsSelfTestMessage(message);
+        if (message.Author.IsBot && !isSelfTest)
+        {
+            _logger.LogDebug("Spam detector skipped bot message {MessageId}", message.Id);
+            return;
+        }
+
         if (message.Channel is not SocketTextChannel channel) return;
-        if (_exemptionService.IsExempt(message.Author)) return;
+
+        if (!isSelfTest && _exemptionService.IsExempt(message.Author))
+        {
+            _logger.LogDebug("Spam detector skipped exempt author {UserId}", message.Author.Id);
+            return;
+        }
 
         var guildUser = channel.Guild.GetUser(message.Author.Id);
-        if (_exemptionService.IsExempt(guildUser)) return;
-
-        var fingerprint = ComputeFingerprint(message.Content ?? string.Empty,
-            message.Attachments.Select(a => a.Filename).ToArray());
-        if (string.IsNullOrEmpty(fingerprint)) return;
-
-        var userId = message.Author.Id;
-        var now = DateTimeOffset.UtcNow;
-        var window = TimeSpan.FromSeconds(_config.TimeWindowSeconds);
-        var candidate = new SpamCandidate(channel.Id, fingerprint, now, message.Id);
-
-        List<SpamCandidate>? burst = null;
-
-        lock (_lock)
+        if (!isSelfTest && _exemptionService.IsExempt(guildUser))
         {
-            var list = _candidates.GetOrAdd(userId, _ => []);
-            list.RemoveAll(c => now - c.Timestamp > window);
+            _logger.LogDebug("Spam detector skipped exempt guild user {UserId}", message.Author.Id);
+            return;
+        }
 
-            var matching = list
-                .Where(c => c.Fingerprint == fingerprint && c.ChannelId != channel.Id)
-                .ToList();
+        var fingerprint = ComputeFingerprint(
+            message.Content ?? string.Empty,
+            message.Attachments.Select(AttachmentInfo.FromDiscord));
+        if (string.IsNullOrEmpty(fingerprint))
+        {
+            _logger.LogDebug("Spam detector skipped empty fingerprint for message {MessageId}", message.Id);
+            return;
+        }
 
-            if (matching.Count + 1 < _config.MinimumChannelCount)
+        var burst = TrackCandidate(message.Author.Id, channel.Id, message.Id, fingerprint, DateTimeOffset.UtcNow);
+
+        _logger.LogDebug(
+            "Spam detector tracked message {MessageId} in channel {ChannelId} for user {UserId}; Fingerprint={Fingerprint}; Matched={Matched}",
+            message.Id,
+            channel.Id,
+            message.Author.Id,
+            fingerprint,
+            burst is not null);
+
+        if (burst is not null)
+        {
+            if (isSelfTest)
             {
-                list.Add(candidate);
+                _logger.LogInformation(
+                    "Spam self-test detected burst for user {UserId} across {ChannelCount} channels within {Window}s",
+                    message.Author.Id,
+                    burst.Select(c => c.ChannelId).Distinct().Count(),
+                    _config.TimeWindowSeconds);
+                return;
             }
-            else
+
+            await EnforceAsync(message, channel, burst);
+        }
+    }
+
+    public async Task<SpamLiveTestResult> RunLiveSelfTestAsync(
+        SocketGuild guild,
+        IReadOnlyList<ITextChannel> channels,
+        string content)
+    {
+        if (!_config.Enabled)
+        {
+            return new SpamLiveTestResult(false, "Cross-channel spam detection is disabled.", string.Empty, 0, channels.Count, [], 0);
+        }
+
+        if (channels.Count < 2)
+        {
+            return new SpamLiveTestResult(false, "Choose at least 2 channels for a meaningful test.", string.Empty, 0, channels.Count, [], 0);
+        }
+
+        var nonce = Guid.NewGuid().ToString("N")[..8];
+        var payload = $"{SelfTestPrefix}{nonce}] {content}";
+        var fingerprint = ComputeFingerprint(payload, Array.Empty<AttachmentInfo>());
+        var posted = new List<ulong>();
+        var postedMessages = new List<(ulong ChannelId, ulong MessageId)>();
+        List<SpamCandidate>? detectedBurst = null;
+
+        foreach (var channel in channels)
+        {
+            var sent = await channel.SendMessageAsync(payload);
+            posted.Add(channel.Id);
+            postedMessages.Add((channel.Id, sent.Id));
+            detectedBurst = TrackCandidate(_client.CurrentUser.Id, channel.Id, sent.Id, fingerprint, DateTimeOffset.UtcNow);
+        }
+
+        var cleanupErrors = 0;
+        foreach (var postedMessage in postedMessages)
+        {
+            try
             {
-                burst = [.. matching, candidate];
-                _candidates.TryRemove(userId, out _);
+                var cleanupChannel = guild.GetTextChannel(postedMessage.ChannelId);
+                if (cleanupChannel is not null)
+                {
+                    await cleanupChannel.DeleteMessageAsync(postedMessage.MessageId);
+                }
+            }
+            catch (Exception ex)
+            {
+                cleanupErrors++;
+                _logger.LogDebug(ex, "Spam self-test cleanup failed for message {MessageId} in channel {ChannelId}", postedMessage.MessageId, postedMessage.ChannelId);
             }
         }
 
-        if (burst is not null)
-            await EnforceAsync(message, channel, burst);
+        var detected = detectedBurst is not null;
+        var matchedChannels = detectedBurst?.Select(c => c.ChannelId).Distinct().Count() ?? 0;
+        var message = detected
+            ? $"Detected after posting to {posted.Count} channels."
+            : $"Not detected. Posted to {posted.Count} channels; threshold is {_config.MinimumChannelCount}.";
+
+        _logger.LogInformation(
+            "Spam live self-test complete: Detected={Detected}, PostedChannels={PostedChannels}, MatchedChannels={MatchedChannels}, CleanupErrors={CleanupErrors}, Fingerprint={Fingerprint}",
+            detected,
+            posted.Count,
+            matchedChannels,
+            cleanupErrors,
+            fingerprint);
+
+        return new SpamLiveTestResult(detected, message, fingerprint, matchedChannels, posted.Count, posted, cleanupErrors);
     }
 
     private async Task EnforceAsync(
@@ -133,13 +222,77 @@ public sealed class CrossChannelSpamDetector : IDisposable
         await _logService.LogSpamDetectedAsync(triggeringMessage.Author, channels, burst[0].Fingerprint, deleted);
     }
 
-    public static string ComputeFingerprint(string content, string[] attachmentFilenames)
+    public static string ComputeFingerprint(string content, IEnumerable<AttachmentInfo> attachments)
     {
-        if (string.IsNullOrEmpty(content) && attachmentFilenames.Length == 0)
+        var normalizedContent = NormalizeContent(content);
+        var attachmentParts = attachments
+            .Select(ComputeAttachmentSignature)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToArray();
+
+        if (string.IsNullOrEmpty(normalizedContent) && attachmentParts.Length == 0)
             return string.Empty;
 
-        var sorted = attachmentFilenames.OrderBy(f => f);
-        return $"{content}|{string.Join(",", sorted)}";
+        return $"{normalizedContent}|{string.Join(",", attachmentParts)}";
+    }
+
+    private List<SpamCandidate>? TrackCandidate(
+        ulong userId,
+        ulong channelId,
+        ulong messageId,
+        string fingerprint,
+        DateTimeOffset now)
+    {
+        var window = TimeSpan.FromSeconds(_config.TimeWindowSeconds);
+        var candidate = new SpamCandidate(channelId, fingerprint, now, messageId);
+        List<SpamCandidate>? burst = null;
+
+        lock (_lock)
+        {
+            var list = _candidates.GetOrAdd(userId, _ => []);
+            list.RemoveAll(c => now - c.Timestamp > window);
+
+            var matching = list
+                .Where(c => c.Fingerprint == fingerprint && c.ChannelId != channelId)
+                .ToList();
+
+            if (matching.Count + 1 < _config.MinimumChannelCount)
+            {
+                list.Add(candidate);
+            }
+            else
+            {
+                burst = [.. matching, candidate];
+                _candidates.TryRemove(userId, out _);
+            }
+        }
+
+        return burst;
+    }
+
+    private static string NormalizeContent(string content)
+    {
+        return string.Join(' ', content
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    private static string ComputeAttachmentSignature(AttachmentInfo attachment)
+    {
+        var contentType = (attachment.ContentType ?? "unknown").Trim().ToLowerInvariant();
+        var extension = Path.GetExtension(attachment.Filename ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+        var width = attachment.Width?.ToString(CultureInfo.InvariantCulture) ?? "0";
+        var height = attachment.Height?.ToString(CultureInfo.InvariantCulture) ?? "0";
+        var size = attachment.Size.ToString(CultureInfo.InvariantCulture);
+        var spoiler = attachment.IsSpoiler ? "1" : "0";
+        return $"{contentType}:{size}:{width}:{height}:{extension}:{spoiler}";
+    }
+
+    private static bool IsSelfTestMessage(SocketUserMessage message)
+    {
+        return message.Content.StartsWith(SelfTestPrefix, StringComparison.Ordinal);
     }
 
     private void Cleanup()
@@ -163,7 +316,10 @@ public sealed class CrossChannelSpamDetector : IDisposable
 
     public SpamSimulationResult Simulate(string content, string[] attachmentFilenames)
     {
-        var fingerprint = ComputeFingerprint(content, attachmentFilenames);
+        var attachments = attachmentFilenames
+            .Select(f => new AttachmentInfo(f, 0, null, null, null, false))
+            .ToArray();
+        var fingerprint = ComputeFingerprint(content, attachments);
         return new SpamSimulationResult(fingerprint, _config.Enabled, _config.MinimumChannelCount, _config.TimeWindowSeconds);
     }
 
@@ -177,4 +333,33 @@ public record SpamDetectionStatus(bool Enabled, int TimeWindowSeconds, int Minim
 public record SpamSimulationResult(string Fingerprint, bool DetectionEnabled, int MinimumChannelCount, int TimeWindowSeconds)
 {
     public bool WouldBeTracked => !string.IsNullOrEmpty(Fingerprint);
+}
+
+public record SpamLiveTestResult(
+    bool Detected,
+    string Message,
+    string Fingerprint,
+    int MatchedChannels,
+    int PostedChannels,
+    IReadOnlyList<ulong> ChannelIds,
+    int CleanupErrors);
+
+public readonly record struct AttachmentInfo(
+    string Filename,
+    int Size,
+    int? Width,
+    int? Height,
+    string? ContentType,
+    bool IsSpoiler)
+{
+    public static AttachmentInfo FromDiscord(IAttachment attachment)
+    {
+        return new AttachmentInfo(
+            attachment.Filename,
+            attachment.Size,
+            attachment.Width,
+            attachment.Height,
+            attachment.ContentType,
+            attachment.IsSpoiler());
+    }
 }

@@ -2,6 +2,7 @@ using Discord;
 using Discord.WebSocket;
 using DiscordBot.Core.Data;
 using DiscordBot.Models;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,8 @@ public class SingleMessageService
     private readonly ILogger<SingleMessageService> _logger;
     private readonly ModerationLogService _logService;
     private readonly ModerationExemptionService _exemptionService;
+    private readonly SemaphoreSlim _schemaInitLock = new(1, 1);
+    private volatile bool _schemaInitialized;
 
     public SingleMessageService(
         IServiceScopeFactory scopeFactory,
@@ -34,6 +37,11 @@ public class SingleMessageService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+        if (!await EnsureSchemaInitializedAsync(db))
+        {
+            return false;
+        }
+
         var state = await db.SingleMessageChannelStates
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.ChannelId == channelId);
@@ -54,6 +62,11 @@ public class SingleMessageService
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+
+        if (!await EnsureSchemaInitializedAsync(db))
+        {
+            return;
+        }
 
         var state = await db.SingleMessageChannelStates
             .AsNoTracking()
@@ -126,6 +139,11 @@ public class SingleMessageService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 
+        if (!await EnsureSchemaInitializedAsync(db))
+        {
+            return "❌ Failed to initialize database schema. Check logs and retry.";
+        }
+
         var state = await db.SingleMessageChannelStates.FindAsync(channelId);
         if (state is null)
         {
@@ -155,6 +173,11 @@ public class SingleMessageService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 
+        if (!await EnsureSchemaInitializedAsync(db))
+        {
+            return "❌ Failed to initialize database schema. Check logs and retry.";
+        }
+
         var state = await db.SingleMessageChannelStates.FindAsync(channelId);
         if (state is null)
             return $"ℹ️ <#{channelId}> is not currently configured as a single-message channel.";
@@ -179,6 +202,11 @@ public class SingleMessageService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 
+        if (!await EnsureSchemaInitializedAsync(db))
+        {
+            return "❌ Failed to initialize database schema. Check logs and retry.";
+        }
+
         var record = await db.SingleMessageRecords
             .FirstOrDefaultAsync(r => r.ChannelId == channelId && r.UserId == userId);
 
@@ -196,11 +224,124 @@ public class SingleMessageService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 
+        if (!await EnsureSchemaInitializedAsync(db))
+        {
+            return Array.Empty<SingleMessageRecord>();
+        }
+
         return await db.SingleMessageRecords
             .AsNoTracking()
             .Where(r => r.ChannelId == channelId)
             .OrderBy(r => r.PostedAt)
             .ToListAsync();
+    }
+
+    private async Task<bool> EnsureSchemaInitializedAsync(HomotechsualBotContext db)
+    {
+        if (_schemaInitialized)
+        {
+            return true;
+        }
+
+        await _schemaInitLock.WaitAsync();
+        try
+        {
+            if (_schemaInitialized)
+            {
+                return true;
+            }
+
+            await db.Database.MigrateAsync();
+
+            var hasChannelStates = await TableExistsAsync(db, "SingleMessageChannelStates");
+            var hasRecords = await TableExistsAsync(db, "SingleMessageRecords");
+
+            if (!hasChannelStates || !hasRecords)
+            {
+                _logger.LogWarning(
+                    "SingleMessage schema is incomplete after migrations (ChannelStates={HasChannelStates}, Records={HasRecords}). Creating missing tables.",
+                    hasChannelStates,
+                    hasRecords);
+
+                await CreateMissingSingleMessageSchemaAsync(db);
+            }
+
+            _schemaInitialized = true;
+            return true;
+        }
+        catch (SqliteException ex)
+        {
+            _logger.LogError(ex, "Failed to initialize SingleMessage database schema");
+            return false;
+        }
+        finally
+        {
+            _schemaInitLock.Release();
+        }
+    }
+
+    private static async Task<bool> TableExistsAsync(HomotechsualBotContext db, string tableName)
+    {
+        var connection = db.Database.GetDbConnection();
+        var closeWhenDone = connection.State != System.Data.ConnectionState.Open;
+
+        if (closeWhenDone)
+        {
+            await connection.OpenAsync();
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name LIMIT 1;";
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "$name";
+            parameter.Value = tableName;
+            command.Parameters.Add(parameter);
+
+            var result = await command.ExecuteScalarAsync();
+            return result is not null and not DBNull;
+        }
+        finally
+        {
+            if (closeWhenDone)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private static async Task CreateMissingSingleMessageSchemaAsync(HomotechsualBotContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "SingleMessageChannelStates" (
+                "ChannelId" INTEGER NOT NULL CONSTRAINT "PK_SingleMessageChannelStates" PRIMARY KEY,
+                "IsEnabled" INTEGER NOT NULL DEFAULT 0,
+                "CreatedAt" TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                "UpdatedAt" TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+            );
+            """);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "SingleMessageRecords" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_SingleMessageRecords" PRIMARY KEY AUTOINCREMENT,
+                "ChannelId" INTEGER NOT NULL,
+                "UserId" INTEGER NOT NULL,
+                "MessageId" INTEGER NOT NULL,
+                "PostedAt" TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                CONSTRAINT "FK_SingleMessageRecords_SingleMessageChannelStates_ChannelId"
+                    FOREIGN KEY ("ChannelId") REFERENCES "SingleMessageChannelStates" ("ChannelId") ON DELETE CASCADE
+            );
+            """);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SingleMessageRecords_ChannelId_UserId"
+            ON "SingleMessageRecords" ("ChannelId", "UserId");
+            """);
     }
 
     private async Task<int> ScanHistoryAsync(HomotechsualBotContext db, ulong channelId, ulong guildId)
