@@ -18,10 +18,11 @@ public class SingleMessageModule : InteractionModuleBase<SocketInteractionContex
 
     [SlashCommand("enable", "Enable single-message enforcement for a channel")]
     public async Task EnableAsync(
-        [Summary("channel", "Channel to enable (defaults to current)")] SocketTextChannel? channel = null)
+        [Summary("channel", "Channel to enable (defaults to current)")] SocketTextChannel? channel = null,
+        [Summary("scan_history", "Pre-populate from last 100 messages (default: true)")] bool scanHistory = true)
     {
         var target = channel ?? (SocketTextChannel)Context.Channel;
-        var result = await _service.EnableChannelAsync(target.Id, Context.Guild.Id);
+        var result = await _service.EnableChannelAsync(target.Id, Context.Guild.Id, scanHistory);
         await RespondAsync(result, ephemeral: true);
     }
 
@@ -50,23 +51,29 @@ public class SingleMessageModule : InteractionModuleBase<SocketInteractionContex
     {
         var target = channel ?? (SocketTextChannel)Context.Channel;
 
-        if (!_service.IsRegisteredChannel(target.Id))
+        var isEnabled = await _service.IsEnabledAsync(target.Id);
+        var records = await _service.ListPostedUsersAsync(target.Id);
+
+        if (!isEnabled && records.Count == 0)
         {
-            await RespondAsync($"❌ <#{target.Id}> is not registered as a single-message channel.", ephemeral: true);
+            await RespondAsync(
+                $"ℹ️ <#{target.Id}> does not have single-message enforcement configured. Use `/singlemessage enable` to set it up.",
+                ephemeral: true);
             return;
         }
 
-        var records = await _service.ListPostedUsersAsync(target.Id);
+        var statusLine = isEnabled ? "🟢 Enforcement active" : "🔴 Enforcement disabled";
 
         if (records.Count == 0)
         {
-            await RespondAsync($"ℹ️ No posts recorded in <#{target.Id}> yet.", ephemeral: true);
+            await RespondAsync($"{statusLine} — no posts recorded in <#{target.Id}> yet.", ephemeral: true);
             return;
         }
 
         var embed = new EmbedBuilder()
             .WithTitle($"Posted users in #{target.Name}")
-            .WithColor(Color.Blue)
+            .WithDescription(statusLine)
+            .WithColor(isEnabled ? Color.Green : Color.Red)
             .WithFooter($"{records.Count} user(s) total");
 
         foreach (var record in records.Take(25))
@@ -78,7 +85,7 @@ public class SingleMessageModule : InteractionModuleBase<SocketInteractionContex
         }
 
         if (records.Count > 25)
-            embed.WithDescription($"Showing first 25 of {records.Count} users.");
+            embed.WithDescription($"{statusLine}\nShowing first 25 of {records.Count} users.");
 
         await RespondAsync(embed: embed.Build(), ephemeral: true);
     }

@@ -3,7 +3,6 @@ using Discord.WebSocket;
 using DiscordBot.Core.Data;
 using DiscordBot.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -14,13 +13,10 @@ public class SingleMessageService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly DiscordSocketClient _client;
     private readonly ILogger<SingleMessageService> _logger;
-    private readonly HashSet<ulong> _registeredChannelIds;
-    private readonly Dictionary<ulong, SingleMessageChannelConfig> _channelConfigs;
     private readonly ModerationLogService _logService;
 
     public SingleMessageService(
         IServiceScopeFactory scopeFactory,
-        IConfiguration configuration,
         DiscordSocketClient client,
         ILogger<SingleMessageService> logger,
         ModerationLogService logService)
@@ -29,16 +25,17 @@ public class SingleMessageService
         _client = client;
         _logger = logger;
         _logService = logService;
-
-        var configs = configuration
-            .GetSection("SingleMessage:Channels")
-            .Get<List<SingleMessageChannelConfig>>() ?? [];
-
-        _channelConfigs = configs.ToDictionary(c => c.ChannelId);
-        _registeredChannelIds = [.. _channelConfigs.Keys];
     }
 
-    public bool IsRegisteredChannel(ulong channelId) => _registeredChannelIds.Contains(channelId);
+    public async Task<bool> IsEnabledAsync(ulong channelId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+        var state = await db.SingleMessageChannelStates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ChannelId == channelId);
+        return state?.IsEnabled == true;
+    }
 
     public async Task HandleMessageAsync(SocketMessage rawMessage)
     {
@@ -47,7 +44,6 @@ public class SingleMessageService
         if (message.Channel is not SocketTextChannel channel) return;
 
         var channelId = channel.Id;
-        if (!_registeredChannelIds.Contains(channelId)) return;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
@@ -118,11 +114,8 @@ public class SingleMessageService
         }
     }
 
-    public async Task<string> EnableChannelAsync(ulong channelId, ulong guildId)
+    public async Task<string> EnableChannelAsync(ulong channelId, ulong guildId, bool scanHistory = false)
     {
-        if (!_channelConfigs.TryGetValue(channelId, out var config))
-            return $"❌ <#{channelId}> is not registered in the bot's configuration. Add it to `SingleMessage:Channels` in appsettings.json first.";
-
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 
@@ -140,10 +133,8 @@ public class SingleMessageService
         await db.SaveChangesAsync();
 
         int prePopulated = 0;
-        if (config.ScanHistoryOnEnable)
-        {
+        if (scanHistory)
             prePopulated = await ScanHistoryAsync(db, channelId, guildId);
-        }
 
         var suffix = prePopulated > 0
             ? $" {prePopulated} existing user(s) pre-populated from message history."
@@ -154,15 +145,15 @@ public class SingleMessageService
 
     public async Task<string> DisableChannelAsync(ulong channelId)
     {
-        if (!_registeredChannelIds.Contains(channelId))
-            return $"❌ <#{channelId}> is not registered in the bot's configuration.";
-
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 
         var state = await db.SingleMessageChannelStates.FindAsync(channelId);
         if (state is null)
-            return $"ℹ️ <#{channelId}> has no active enforcement state to disable.";
+            return $"ℹ️ <#{channelId}> is not currently configured as a single-message channel.";
+
+        if (!state.IsEnabled)
+            return $"ℹ️ <#{channelId}> already has enforcement disabled.";
 
         state.IsEnabled = false;
         state.UpdatedAt = DateTime.UtcNow;
@@ -173,9 +164,6 @@ public class SingleMessageService
 
     public async Task<string> ResetUserAsync(ulong channelId, ulong userId, string userMention)
     {
-        if (!_registeredChannelIds.Contains(channelId))
-            return $"❌ <#{channelId}> is not registered in the bot's configuration.";
-
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
 

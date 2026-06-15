@@ -151,7 +151,23 @@ public sealed class CrossChannelSpamDetector : IDisposable
         }
     }
 
+    public SpamDetectionStatus GetStatus() =>
+        new(_config.Enabled, _config.TimeWindowSeconds, _config.MinimumChannelCount);
+
+    public SpamSimulationResult Simulate(string content, string[] attachmentFilenames)
+    {
+        var fingerprint = ComputeFingerprint(content, attachmentFilenames);
+        return new SpamSimulationResult(fingerprint, _config.Enabled, _config.MinimumChannelCount, _config.TimeWindowSeconds);
+    }
+
     public void Dispose() => _cleanupTimer.Dispose();
 }
 
 internal record SpamCandidate(ulong ChannelId, string Fingerprint, DateTimeOffset Timestamp, ulong MessageId);
+
+public record SpamDetectionStatus(bool Enabled, int TimeWindowSeconds, int MinimumChannelCount);
+
+public record SpamSimulationResult(string Fingerprint, bool DetectionEnabled, int MinimumChannelCount, int TimeWindowSeconds)
+{
+    public bool WouldBeTracked => !string.IsNullOrEmpty(Fingerprint);
+}

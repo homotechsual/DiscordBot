@@ -5,6 +5,18 @@ All notable changes to HomotechsualBot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-06-15
+
+### Changed
+
+* `SingleMessageService` is now fully DB-backed — channel registration no longer requires an `appsettings.json`/env-var config entry; `/singlemessage enable` and `/singlemessage disable` operate directly on the database at runtime with no redeploy needed
+* `/singlemessage enable` gains a `scan_history` parameter (default `true`) replacing the old per-channel config flag
+* `/singlemessage list` now shows enforcement status (active / disabled) alongside posted users
+
+### Added
+
+* `/spam test` command (requires Manage Messages) — dry-runs the cross-channel spam detector against any text, showing the computed fingerprint, current config, trigger conditions, and enforcement actions without taking any real action
+
 ## [1.0.3] - 2026-06-15
 
 ### Fixed
