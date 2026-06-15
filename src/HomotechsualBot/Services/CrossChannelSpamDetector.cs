@@ -19,6 +19,7 @@ public sealed class CrossChannelSpamDetector : IDisposable
     private readonly ConcurrentDictionary<ulong, List<SpamCandidate>> _candidates = new();
     private readonly object _lock = new();
     private readonly Timer _cleanupTimer;
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<List<SpamCandidate>>> _pendingLiveTests = new();
 
     public CrossChannelSpamDetector(
         DiscordSocketClient client,
@@ -95,6 +96,11 @@ public sealed class CrossChannelSpamDetector : IDisposable
                     message.Author.Id,
                     burst.Select(c => c.ChannelId).Distinct().Count(),
                     _config.TimeWindowSeconds);
+                var nonce = ExtractSelfTestNonce(message.Content ?? string.Empty);
+                if (nonce is not null && _pendingLiveTests.TryGetValue(nonce, out var tcs))
+                {
+                    tcs.TrySetResult(burst);
+                }
                 return;
             }
 
@@ -125,7 +131,9 @@ public sealed class CrossChannelSpamDetector : IDisposable
         byte[]? attachmentBytes = null;
         var attachmentName = attachment?.Filename;
         string fingerprint = string.Empty;
-        List<SpamCandidate>? detectedBurst = null;
+
+        var detectionTcs = new TaskCompletionSource<List<SpamCandidate>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingLiveTests[nonce] = detectionTcs;
 
         if (attachment is not null)
         {
@@ -136,6 +144,7 @@ public sealed class CrossChannelSpamDetector : IDisposable
             }
             catch (Exception ex)
             {
+                _pendingLiveTests.TryRemove(nonce, out _);
                 _logger.LogWarning(ex, "Spam live self-test failed to download attachment from {Url}", attachment.Url);
                 return new SpamLiveTestResult(false, "Failed to download test attachment. Try uploading again.", string.Empty, 0, 0, [], 0);
             }
@@ -159,10 +168,11 @@ public sealed class CrossChannelSpamDetector : IDisposable
             fingerprint = ComputeFingerprint(
                 sent.Content ?? string.Empty,
                 sent.Attachments.Select(AttachmentInfo.FromDiscord));
-
-            var burst = TrackCandidate(_client.CurrentUser.Id, channel.Id, sent.Id, fingerprint, DateTimeOffset.UtcNow);
-            detectedBurst ??= burst;
         }
+
+        await Task.WhenAny(detectionTcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        var detectedBurst = detectionTcs.Task.IsCompleted ? await detectionTcs.Task : null;
+        _pendingLiveTests.TryRemove(nonce, out _);
 
         var cleanupErrors = 0;
         foreach (var postedMessage in postedMessages)
@@ -325,6 +335,14 @@ public sealed class CrossChannelSpamDetector : IDisposable
     private static bool IsSelfTestMessage(SocketUserMessage message)
     {
         return message.Content.StartsWith(SelfTestPrefix, StringComparison.Ordinal);
+    }
+
+    private static string? ExtractSelfTestNonce(string content)
+    {
+        if (!content.StartsWith(SelfTestPrefix, StringComparison.Ordinal)) return null;
+        var end = content.IndexOf(']', SelfTestPrefix.Length);
+        if (end < 0) return null;
+        return content[SelfTestPrefix.Length..end];
     }
 
     private void Cleanup()

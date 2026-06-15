@@ -70,14 +70,20 @@ public class SpamTestModule : InteractionModuleBase<SocketInteractionContext>
 
     [SlashCommand("live-test", "Post identical test messages to channels and verify real detector behavior")]
     public async Task LiveTestAsync(
-        [Summary("content", "Message text to post in each channel")] string content,
         [Summary("channel1", "First channel to post to")] ITextChannel channel1,
         [Summary("channel2", "Second channel to post to")] ITextChannel channel2,
+        [Summary("content", "Message text to post in each channel")] string content = "",
         [Summary("channel3", "Optional third channel")] ITextChannel? channel3 = null,
         [Summary("channel4", "Optional fourth channel")] ITextChannel? channel4 = null,
         [Summary("attachment", "Optional image/file to include in each test post")] IAttachment? attachment = null)
     {
         await DeferAsync(ephemeral: true);
+
+        if (string.IsNullOrWhiteSpace(content) && attachment is null)
+        {
+            await FollowupAsync("❌ Provide either a text message or an attachment (or both).", ephemeral: true);
+            return;
+        }
 
         var channels = new[] { channel1, channel2, channel3, channel4 }
             .OfType<ITextChannel>()
