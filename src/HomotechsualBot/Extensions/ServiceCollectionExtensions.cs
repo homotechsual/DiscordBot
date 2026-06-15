@@ -121,8 +121,8 @@ public static class ServiceCollectionExtensions
         if (botConfig.YoutubeMonitor.Enabled)
         {
             services.AddHostedService<YoutubeMonitorService>();
+            services.AddHostedService<YoutubeFeedUrlsEndpointHostedService>();
         }
-        services.AddHostedService<YoutubeFeedUrlsEndpointHostedService>();
         services.AddHostedService<HeartbeatMonitorService>();
         services.AddHostedService<MetricsHostedService>();
 

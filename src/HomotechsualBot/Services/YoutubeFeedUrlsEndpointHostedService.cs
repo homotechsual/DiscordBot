@@ -146,7 +146,7 @@ internal sealed class YoutubeFeedUrlsEndpointHostedService : BackgroundService
         BotMetrics.YoutubeUnresolvedReferences.Set(unresolved.Count);
 
         return new YoutubeFeedUrlsPayload(
-            Service: "hudu-bot",
+            Service: "homotechsual-bot",
             GeneratedAtUtc: DateTime.UtcNow,
             YoutubeMonitorEnabled: settings?.Enabled ?? _botConfig.YoutubeMonitor.Enabled,
             ConfiguredChannelCount: channels.Count,
