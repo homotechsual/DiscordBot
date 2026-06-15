@@ -151,6 +151,14 @@ jobs:
         'HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=${{ secrets.CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT || '3' }}' \
         'HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0=${{ secrets.MODERATION_EXEMPT_USER_ID_0 || '' }}' \
         'HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0=${{ secrets.MODERATION_EXEMPT_ROLE_ID_0 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisableAllFunCommands=${{ secrets.COMMAND_ACCESS_DISABLE_ALL_FUN_COMMANDS || 'false' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__0=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_0 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__1=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_1 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__2=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_2 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__3=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_3 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__4=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_4 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__5=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_5 || '' }}' \
+        'HOMOTECHSUALBOT_CommandAccess__DisabledCommands__6=${{ secrets.COMMAND_ACCESS_DISABLED_COMMAND_6 || '' }}' \
         | sudo -n tee ${{ env.DEPLOY_PATH }}/.env > /dev/null
         sudo -n chown ${{ env.RUNTIME_USER }}:${{ env.RUNTIME_USER }} ${{ env.DEPLOY_PATH }}/.env
         sudo -n chmod 600 ${{ env.DEPLOY_PATH }}/.env"
