@@ -10,6 +10,7 @@ public sealed class CrossChannelSpamDetector : IDisposable
 {
     private readonly DiscordSocketClient _client;
     private readonly CrossChannelSpamConfig _config;
+    private readonly ModerationExemptionService _exemptionService;
     private readonly ModerationLogService _logService;
     private readonly ILogger<CrossChannelSpamDetector> _logger;
     private readonly ConcurrentDictionary<ulong, List<SpamCandidate>> _candidates = new();
@@ -19,11 +20,13 @@ public sealed class CrossChannelSpamDetector : IDisposable
     public CrossChannelSpamDetector(
         DiscordSocketClient client,
         CrossChannelSpamConfig config,
+        ModerationExemptionService exemptionService,
         ModerationLogService logService,
         ILogger<CrossChannelSpamDetector> logger)
     {
         _client = client;
         _config = config;
+        _exemptionService = exemptionService;
         _logService = logService;
         _logger = logger;
         _cleanupTimer = new Timer(_ => Cleanup(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
@@ -35,6 +38,10 @@ public sealed class CrossChannelSpamDetector : IDisposable
         if (rawMessage is not SocketUserMessage message) return;
         if (message.Author.IsBot) return;
         if (message.Channel is not SocketTextChannel channel) return;
+        if (_exemptionService.IsExempt(message.Author)) return;
+
+        var guildUser = channel.Guild.GetUser(message.Author.Id);
+        if (_exemptionService.IsExempt(guildUser)) return;
 
         var fingerprint = ComputeFingerprint(message.Content ?? string.Empty,
             message.Attachments.Select(a => a.Filename).ToArray());

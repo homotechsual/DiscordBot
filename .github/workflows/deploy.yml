@@ -149,6 +149,8 @@ jobs:
         'HOMOTECHSUALBOT_CrossChannelSpam__Enabled=${{ secrets.CROSS_CHANNEL_SPAM_ENABLED || 'false' }}' \
         'HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=${{ secrets.CROSS_CHANNEL_SPAM_TIME_WINDOW_SECONDS || '30' }}' \
         'HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=${{ secrets.CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT || '3' }}' \
+        'HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0=${{ secrets.MODERATION_EXEMPT_USER_ID_0 || '' }}' \
+        'HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0=${{ secrets.MODERATION_EXEMPT_ROLE_ID_0 || '' }}' \
         | sudo -n tee ${{ env.DEPLOY_PATH }}/.env > /dev/null
         sudo -n chown ${{ env.RUNTIME_USER }}:${{ env.RUNTIME_USER }} ${{ env.DEPLOY_PATH }}/.env
         sudo -n chmod 600 ${{ env.DEPLOY_PATH }}/.env"

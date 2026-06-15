@@ -14,17 +14,20 @@ public class SingleMessageService
     private readonly DiscordSocketClient _client;
     private readonly ILogger<SingleMessageService> _logger;
     private readonly ModerationLogService _logService;
+    private readonly ModerationExemptionService _exemptionService;
 
     public SingleMessageService(
         IServiceScopeFactory scopeFactory,
         DiscordSocketClient client,
         ILogger<SingleMessageService> logger,
-        ModerationLogService logService)
+        ModerationLogService logService,
+        ModerationExemptionService exemptionService)
     {
         _scopeFactory = scopeFactory;
         _client = client;
         _logger = logger;
         _logService = logService;
+        _exemptionService = exemptionService;
     }
 
     public async Task<bool> IsEnabledAsync(ulong channelId)
@@ -42,6 +45,10 @@ public class SingleMessageService
         if (rawMessage is not SocketUserMessage message) return;
         if (message.Author.IsBot) return;
         if (message.Channel is not SocketTextChannel channel) return;
+        if (_exemptionService.IsExempt(message.Author)) return;
+
+        var guildUser = channel.Guild.GetUser(message.Author.Id);
+        if (_exemptionService.IsExempt(guildUser)) return;
 
         var channelId = channel.Id;
 
@@ -157,9 +164,14 @@ public class SingleMessageService
 
         state.IsEnabled = false;
         state.UpdatedAt = DateTime.UtcNow;
+
+        var records = await db.SingleMessageRecords
+            .Where(r => r.ChannelId == channelId)
+            .ToListAsync();
+        db.SingleMessageRecords.RemoveRange(records);
         await db.SaveChangesAsync();
 
-        return $"✅ Single-message enforcement disabled for <#{channelId}>. Existing records retained.";
+        return $"✅ Single-message enforcement disabled for <#{channelId}>. {records.Count} user record{(records.Count == 1 ? "" : "s")} cleared.";
     }
 
     public async Task<string> ResetUserAsync(ulong channelId, ulong userId, string userMention)
@@ -207,7 +219,10 @@ public class SingleMessageService
 
         var messages = await textChannel.GetMessagesAsync(100).FlattenAsync();
         var newRecords = messages
-            .Where(m => !m.Author.IsBot && !existingUserIds.Contains(m.Author.Id))
+            .Where(m => !m.Author.IsBot
+                        && !existingUserIds.Contains(m.Author.Id)
+                        && !_exemptionService.IsExempt(m.Author.Id)
+                        && !_exemptionService.IsExempt(guild.GetUser(m.Author.Id)))
             .GroupBy(m => m.Author.Id)
             .Select(g => g.OrderBy(m => m.Timestamp).First())
             .Select(m => new SingleMessageRecord

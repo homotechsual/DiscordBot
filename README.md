@@ -104,8 +104,6 @@ These commands require the **Manage Channels** permission.
 | `/singlemessage reset-user <user> [channel]` | Remove a user's record so they may post again |
 | `/singlemessage list [channel]` | List all users who have posted in the channel, with links to their messages |
 
-Channels must be pre-registered in `SingleMessage:Channels` config before enforcement can be enabled via slash command.
-
 ## ⚙️ Configuration
 
 All settings live under the `Bot` key in `appsettings.json`:
@@ -294,6 +292,43 @@ HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId=1234567890
 HOMOTECHSUALBOT_CrossChannelSpam__Enabled=false
 HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=30
 HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=3
+```
+
+#### Moderation Exemptions Configuration
+
+```bash
+# Linux/Mac
+export HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0=1234567890
+export HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0=1234567890
+
+# Windows PowerShell
+$env:HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0="1234567890"
+$env:HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0="1234567890"
+
+# Windows CMD
+set HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0=1234567890
+set HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0=1234567890
+```
+
+#### Command Access Configuration
+
+```bash
+# Disable all fun commands (meme, 8ball, roll, joke, say)
+HOMOTECHSUALBOT_CommandAccess__DisableAllFunCommands=true
+
+# Disable specific commands globally
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__0=about
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__1=avatar
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__2=help
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__3=ping
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__4=remind
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__5=serverinfo
+HOMOTECHSUALBOT_CommandAccess__DisabledCommands__6=userinfo
+
+# Restrict commands to allowed channel IDs
+HOMOTECHSUALBOT_CommandAccess__RestrictedChannels__about__0=1234567890
+HOMOTECHSUALBOT_CommandAccess__RestrictedChannels__help__0=1234567890
+HOMOTECHSUALBOT_CommandAccess__RestrictedChannels__help__1=2345678901
 ```
 
 ### GitHub Secrets (Deploy Workflow)

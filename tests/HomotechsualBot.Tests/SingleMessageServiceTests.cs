@@ -43,7 +43,12 @@ public sealed class SingleMessageServiceTests : IAsyncDisposable
     }
 
     private DiscordBot.Services.SingleMessageService BuildService() =>
-        new(_scopeFactory, null!, NullLogger<DiscordBot.Services.SingleMessageService>.Instance, null!);
+        new(
+            _scopeFactory,
+            null!,
+            NullLogger<DiscordBot.Services.SingleMessageService>.Instance,
+            null!,
+            new DiscordBot.Services.ModerationExemptionService(new DiscordBot.Models.ModerationExemptionsConfig()));
 
     [Fact]
     public async Task EnableChannelAsync_NewChannel_SetsEnabledInDb()
@@ -146,7 +151,7 @@ public sealed class SingleMessageServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task DisableChannelAsync_PreservesExistingRecords()
+    public async Task DisableChannelAsync_ClearsExistingRecords()
     {
         const ulong channelId = 333UL;
         var service = BuildService();
@@ -161,11 +166,12 @@ public sealed class SingleMessageServiceTests : IAsyncDisposable
             await db.SaveChangesAsync();
         });
 
-        await service.DisableChannelAsync(channelId);
+        var result = await service.DisableChannelAsync(channelId);
 
+        Assert.Contains("1 user record cleared", result, StringComparison.OrdinalIgnoreCase);
         var count = await UseDbAsync(db =>
             db.SingleMessageRecords.CountAsync(r => r.ChannelId == channelId));
-        Assert.Equal(1, count);
+        Assert.Equal(0, count);
     }
 
     [Fact]

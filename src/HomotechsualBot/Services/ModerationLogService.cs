@@ -31,7 +31,7 @@ public class ModerationLogService
 
         try
         {
-            var forum = _client?.GetChannel(_config.ForumChannelId) as SocketForumChannel;
+            var forum = await ResolveForumChannelAsync();
             if (forum is null)
             {
                 _logger.LogWarning("ModerationLog: channel {Id} is not a forum channel or not cached", _config.ForumChannelId);
@@ -59,7 +59,7 @@ public class ModerationLogService
 
         try
         {
-            var forum = _client?.GetChannel(_config.ForumChannelId) as SocketForumChannel;
+            var forum = await ResolveForumChannelAsync();
             if (forum is null)
             {
                 _logger.LogWarning("ModerationLog: channel {Id} is not a forum channel or not cached", _config.ForumChannelId);
@@ -173,4 +173,28 @@ public class ModerationLogService
             .WithButton("🔨 Ban User", $"spam_ban:{userId}:{guildId}", ButtonStyle.Danger)
             .WithButton("✅ Dismiss", $"spam_dismiss:{userId}:{guildId}", ButtonStyle.Secondary)
             .Build();
+
+    private async Task<IForumChannel?> ResolveForumChannelAsync()
+    {
+        if (_client is null)
+            return null;
+
+        if (_client.GetChannel(_config.ForumChannelId) is IForumChannel cachedForum)
+            return cachedForum;
+
+        try
+        {
+            var restChannel = await _client.Rest.GetChannelAsync(_config.ForumChannelId);
+            if (restChannel is IForumChannel restForum)
+                return restForum;
+
+            _logger.LogWarning("ModerationLog: channel {Id} was resolved via REST but is not a forum channel", _config.ForumChannelId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ModerationLog: failed to resolve forum channel {Id} via REST", _config.ForumChannelId);
+        }
+
+        return null;
+    }
 }
