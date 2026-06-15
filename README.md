@@ -30,12 +30,12 @@ git clone <your-repo-url>
 cd homotechsualbot
 ```
 
-2. **Configure the bot** using one of:
+1. **Configure the bot** using one of:
 
 * `src/HomotechsualBot/appsettings.Development.json` (gitignored)
 * .NET User Secrets: `dotnet user-secrets set "Bot:Token" "your-token-here" --project src/HomotechsualBot`
 
-3. **Build and run:**
+1. **Build and run:**
 
 ```bash
 dotnet run --project src/HomotechsualBot
@@ -152,7 +152,9 @@ All settings live under the `Bot` key in `appsettings.json`:
   "CrossChannelSpam": {
     "Enabled": false,
     "TimeWindowSeconds": 30,
-    "MinimumChannelCount": 3
+    "MinimumChannelCount": 3,
+    "DeleteMessages": true,
+    "TimeoutOnDetection": true
   }
 }
 ```
@@ -249,6 +251,8 @@ Detects users who send identical messages across multiple channels within a shor
 | `Enabled` | Enable cross-channel spam detection (default: `false`) |
 | `TimeWindowSeconds` | Sliding window duration in seconds (default: `30`) |
 | `MinimumChannelCount` | Minimum number of distinct channels before a detection fires (default: `3`) |
+| `DeleteMessages` | Delete detected spam messages (requires Manage Messages). Default: `true` |
+| `TimeoutOnDetection` | Apply a 28-day timeout to the spammer (requires Moderate Members). Default: `true` |
 
 ### Uptime Heartbeat
 
@@ -292,6 +296,8 @@ HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId=1234567890
 HOMOTECHSUALBOT_CrossChannelSpam__Enabled=false
 HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=30
 HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=3
+HOMOTECHSUALBOT_CrossChannelSpam__DeleteMessages=true
+HOMOTECHSUALBOT_CrossChannelSpam__TimeoutOnDetection=true
 ```
 
 #### Moderation Exemptions Configuration
@@ -363,6 +369,8 @@ If you deploy with `.github/workflows/deploy.yml`, configure these repository se
 | `CROSS_CHANNEL_SPAM_ENABLED` | `HOMOTECHSUALBOT_CrossChannelSpam__Enabled` |
 | `CROSS_CHANNEL_SPAM_TIME_WINDOW_SECONDS` | `HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds` |
 | `CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT` | `HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount` |
+| `CROSS_CHANNEL_SPAM_DELETE_MESSAGES` | `HOMOTECHSUALBOT_CrossChannelSpam__DeleteMessages` |
+| `CROSS_CHANNEL_SPAM_TIMEOUT_ON_DETECTION` | `HOMOTECHSUALBOT_CrossChannelSpam__TimeoutOnDetection` |
 | `MODERATION_EXEMPT_USER_ID_0` | `HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0` |
 | `MODERATION_EXEMPT_ROLE_ID_0` | `HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0` |
 | `COMMAND_ACCESS_DISABLE_ALL_FUN_COMMANDS` | `HOMOTECHSUALBOT_CommandAccess__DisableAllFunCommands` |
@@ -390,13 +398,13 @@ Use the `VersionManager` tool to keep `src/HomotechsualBot/HomotechsualBot.cspro
 dotnet build tools/VersionManager/VersionManager.csproj -c Release
 ```
 
-2. Bump version:
+1. Bump version:
 
 ```bash
 dotnet artifacts/bin/VersionManager/release/VersionManager.dll bump --version X.Y.Z --type patch --message "Your description"
 ```
 
-3. Validate:
+1. Validate:
 
 ```bash
 dotnet artifacts/bin/VersionManager/release/VersionManager.dll validate

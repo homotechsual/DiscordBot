@@ -218,41 +218,55 @@ public sealed class CrossChannelSpamDetector : IDisposable
         var userId = triggeringMessage.Author.Id;
 
         var deleted = new List<(ulong ChannelId, ulong MessageId)>();
-        foreach (var c in burst)
+        if (_config.DeleteMessages)
         {
-            try
+            foreach (var c in burst)
             {
-                var chan = guild.GetTextChannel(c.ChannelId);
-                if (chan is not null)
+                try
                 {
-                    await chan.DeleteMessageAsync(c.MessageId);
-                    deleted.Add((c.ChannelId, c.MessageId));
+                    var chan = guild.GetTextChannel(c.ChannelId);
+                    if (chan is not null)
+                    {
+                        await chan.DeleteMessageAsync(c.MessageId);
+                        deleted.Add((c.ChannelId, c.MessageId));
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Spam: could not delete message {MsgId} in {ChanId}", c.MessageId, c.ChannelId);
-            }
-        }
-
-        var guildUser = guild.GetUser(userId);
-        if (guildUser is not null)
-        {
-            try
-            {
-                await guildUser.SetTimeOutAsync(TimeSpan.FromDays(28), new RequestOptions
+                catch (Exception ex)
                 {
-                    AuditLogReason = "Automated: cross-channel spam detected"
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Spam: failed to apply timeout to user {UserId}", userId);
+                    _logger.LogDebug(ex, "Spam: could not delete message {MsgId} in {ChanId}", c.MessageId, c.ChannelId);
+                }
             }
         }
         else
         {
-            _logger.LogWarning("Spam: user {UserId} not in guild cache; timeout not applied", userId);
+            _logger.LogInformation("Spam: message deletion skipped (DeleteMessages=false) for user {UserId}", userId);
+        }
+
+        if (_config.TimeoutOnDetection)
+        {
+            var guildUser = guild.GetUser(userId);
+            if (guildUser is not null)
+            {
+                try
+                {
+                    await guildUser.SetTimeOutAsync(TimeSpan.FromDays(28), new RequestOptions
+                    {
+                        AuditLogReason = "Automated: cross-channel spam detected"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Spam: failed to apply timeout to user {UserId}", userId);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Spam: user {UserId} not in guild cache; timeout not applied", userId);
+            }
+        }
+        else
+        {
+            _logger.LogInformation("Spam: timeout skipped (TimeoutOnDetection=false) for user {UserId}", userId);
         }
 
         var channels = burst
