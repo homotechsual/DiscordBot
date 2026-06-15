@@ -399,6 +399,8 @@ public class YoutubeMonitorService : BackgroundService
                 : string.Empty;
             var body = BuildPostBody(youtubeChannel.ChannelId, channelName, video, roleMention);
 
+            _logger.LogInformation("Posting YouTube video {VideoId} with title ({TitleLength} chars): {PostTitle}", video.VideoId, postTitle.Length, postTitle);
+
             try
             {
                 await forumChannel.CreatePostAsync(postTitle, text: body, tags: new ForumTag[] { resolvedForumTag });
@@ -487,6 +489,7 @@ public class YoutubeMonitorService : BackgroundService
 
         template = NormalizeTemplateNewlines(template);
 
+        string title;
         if (!string.IsNullOrWhiteSpace(template))
         {
             var publishedAtUtc = video.PublishedAt.Kind == DateTimeKind.Utc
@@ -494,7 +497,7 @@ public class YoutubeMonitorService : BackgroundService
                 : video.PublishedAt.ToUniversalTime();
             var publishedUnix = new DateTimeOffset(publishedAtUtc).ToUnixTimeSeconds();
 
-            return template
+            title = template
                 .Replace("{ChannelName}", channelName, StringComparison.OrdinalIgnoreCase)
                 .Replace("{ChannelId}", youtubeChannel.ChannelId, StringComparison.OrdinalIgnoreCase)
                 .Replace("{VideoTitle}", video.Title, StringComparison.OrdinalIgnoreCase)
@@ -505,8 +508,19 @@ public class YoutubeMonitorService : BackgroundService
                 .Replace("{PublishedAtDiscord}", $"<t:{publishedUnix}:f>", StringComparison.OrdinalIgnoreCase)
                 .Replace("{PublishedAtDiscordRelative}", $"<t:{publishedUnix}:R>", StringComparison.OrdinalIgnoreCase);
         }
+        else
+        {
+            title = $"[{channelName}] {video.Title}";
+        }
 
-        return $"[{channelName}] {video.Title}";
+        if (title.Length > 100)
+        {
+            title = title[..100];
+            if (char.IsHighSurrogate(title[^1]))
+                title = title[..^1];
+        }
+
+        return string.IsNullOrWhiteSpace(title) ? $"[{channelName}] {video.VideoId}" : title;
     }
 
     private string BuildPostBody(string channelId, string channelName, YouTubeVideoEntry video, string roleMention)
