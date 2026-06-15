@@ -74,7 +74,8 @@ public class SpamTestModule : InteractionModuleBase<SocketInteractionContext>
         [Summary("channel1", "First channel to post to")] ITextChannel channel1,
         [Summary("channel2", "Second channel to post to")] ITextChannel channel2,
         [Summary("channel3", "Optional third channel")] ITextChannel? channel3 = null,
-        [Summary("channel4", "Optional fourth channel")] ITextChannel? channel4 = null)
+        [Summary("channel4", "Optional fourth channel")] ITextChannel? channel4 = null,
+        [Summary("attachment", "Optional image/file to include in each test post")] IAttachment? attachment = null)
     {
         await DeferAsync(ephemeral: true);
 
@@ -105,7 +106,7 @@ public class SpamTestModule : InteractionModuleBase<SocketInteractionContext>
                 ephemeral: true);
         }
 
-        var result = await _detector.RunLiveSelfTestAsync(Context.Guild, channels, content);
+        var result = await _detector.RunLiveSelfTestAsync(Context.Guild, channels, content, attachment);
 
         var embed = new EmbedBuilder()
             .WithTitle("Spam Detection Live Test")

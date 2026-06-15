@@ -105,7 +105,8 @@ public sealed class CrossChannelSpamDetector : IDisposable
     public async Task<SpamLiveTestResult> RunLiveSelfTestAsync(
         SocketGuild guild,
         IReadOnlyList<ITextChannel> channels,
-        string content)
+        string content,
+        IAttachment? attachment = null)
     {
         if (!_config.Enabled)
         {
@@ -119,17 +120,48 @@ public sealed class CrossChannelSpamDetector : IDisposable
 
         var nonce = Guid.NewGuid().ToString("N")[..8];
         var payload = $"{SelfTestPrefix}{nonce}] {content}";
-        var fingerprint = ComputeFingerprint(payload, Array.Empty<AttachmentInfo>());
         var posted = new List<ulong>();
         var postedMessages = new List<(ulong ChannelId, ulong MessageId)>();
+        byte[]? attachmentBytes = null;
+        var attachmentName = attachment?.Filename;
+        string fingerprint = string.Empty;
         List<SpamCandidate>? detectedBurst = null;
+
+        if (attachment is not null)
+        {
+            try
+            {
+                using var httpClient = new HttpClient();
+                attachmentBytes = await httpClient.GetByteArrayAsync(attachment.Url);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Spam live self-test failed to download attachment from {Url}", attachment.Url);
+                return new SpamLiveTestResult(false, "Failed to download test attachment. Try uploading again.", string.Empty, 0, 0, [], 0);
+            }
+        }
 
         foreach (var channel in channels)
         {
-            var sent = await channel.SendMessageAsync(payload);
+            IUserMessage sent;
+            if (attachmentBytes is null)
+            {
+                sent = await channel.SendMessageAsync(payload);
+            }
+            else
+            {
+                await using var stream = new MemoryStream(attachmentBytes, writable: false);
+                sent = await channel.SendFileAsync(stream, attachmentName ?? "spam-test.bin", text: payload);
+            }
+
             posted.Add(channel.Id);
             postedMessages.Add((channel.Id, sent.Id));
-            detectedBurst = TrackCandidate(_client.CurrentUser.Id, channel.Id, sent.Id, fingerprint, DateTimeOffset.UtcNow);
+            fingerprint = ComputeFingerprint(
+                sent.Content ?? string.Empty,
+                sent.Attachments.Select(AttachmentInfo.FromDiscord));
+
+            var burst = TrackCandidate(_client.CurrentUser.Id, channel.Id, sent.Id, fingerprint, DateTimeOffset.UtcNow);
+            detectedBurst ??= burst;
         }
 
         var cleanupErrors = 0;
