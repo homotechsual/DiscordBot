@@ -21,9 +21,11 @@ public class SingleMessageModule : InteractionModuleBase<SocketInteractionContex
         [Summary("channel", "Channel to enable (defaults to current)")] SocketTextChannel? channel = null,
         [Summary("scan_history", "Pre-populate from last 100 messages (default: true)")] bool scanHistory = true)
     {
+        await DeferAsync(ephemeral: true);
+
         var target = channel ?? (SocketTextChannel)Context.Channel;
         var result = await _service.EnableChannelAsync(target.Id, Context.Guild.Id, scanHistory);
-        await RespondAsync(result, ephemeral: true);
+        await FollowupAsync(result, ephemeral: true);
     }
 
     [SlashCommand("disable", "Disable single-message enforcement for a channel")]
