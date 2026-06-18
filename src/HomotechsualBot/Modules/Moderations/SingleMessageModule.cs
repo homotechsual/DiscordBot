@@ -81,9 +81,11 @@ public class SingleMessageModule : InteractionModuleBase<SocketInteractionContex
         foreach (var record in records.Take(25))
         {
             var messageLink = $"https://discord.com/channels/{Context.Guild.Id}/{record.ChannelId}/{record.MessageId}";
+            var guildUser = Context.Guild.GetUser(record.UserId);
+            var username = guildUser?.Username ?? "Unknown User";
             embed.AddField(
-                $"<@{record.UserId}>",
-                $"[View message]({messageLink}) — <t:{new DateTimeOffset(record.PostedAt).ToUnixTimeSeconds()}:R>");
+                $"{username} ({record.UserId})",
+                $"<@{record.UserId}> — [View message]({messageLink}) — <t:{new DateTimeOffset(record.PostedAt).ToUnixTimeSeconds()}:R>");
         }
 
         if (records.Count > 25)
