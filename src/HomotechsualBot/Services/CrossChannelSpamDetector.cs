@@ -275,7 +275,11 @@ public sealed class CrossChannelSpamDetector : IDisposable
             .Distinct()
             .ToList();
 
-        await _logService.LogSpamDetectedAsync(triggeringMessage.Author, channels, burst[0].Fingerprint, deleted);
+        var imageUrl = triggeringMessage.Attachments
+            .FirstOrDefault(a => (a.ContentType ?? string.Empty).StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            ?.Url;
+
+        await _logService.LogSpamDetectedAsync(triggeringMessage.Author, channels, burst[0].Fingerprint, deleted, imageUrl);
     }
 
     public static string ComputeFingerprint(string content, IEnumerable<AttachmentInfo> attachments)

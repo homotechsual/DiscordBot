@@ -25,7 +25,8 @@ public class ModerationLogService
         IUser user,
         IReadOnlyList<ITextChannel> channels,
         string fingerprint,
-        IReadOnlyList<(ulong ChannelId, ulong MessageId)> deletedMessages)
+        IReadOnlyList<(ulong ChannelId, ulong MessageId)> deletedMessages,
+        string? imageUrl = null)
     {
         if (_config.ForumChannelId == 0) return;
 
@@ -42,7 +43,7 @@ public class ModerationLogService
                 ? $"[{user.Id}] {user.Username}"
                 : $"Unknown User - {ModerationActionType.SpamDetected} (ID: 0)";
 
-            var embed = BuildSpamEmbed(user, channels, fingerprint);
+            var embed = BuildSpamEmbed(user, channels, fingerprint, imageUrl);
             var components = BuildSpamButtons(user?.Id ?? 0, forum.Guild.Id);
 
             await forum.CreatePostAsync(threadTitle, embed: embed, components: components);
@@ -102,7 +103,8 @@ public class ModerationLogService
     private Embed BuildSpamEmbed(
         IUser? user,
         IReadOnlyList<ITextChannel> channels,
-        string fingerprint)
+        string fingerprint,
+        string? imageUrl = null)
     {
         var parts = fingerprint.Split('|', 2);
         var text = parts[0];
@@ -122,6 +124,9 @@ public class ModerationLogService
 
         if (!string.IsNullOrWhiteSpace(attachments))
             builder.AddField("Attachments", attachments);
+
+        if (!string.IsNullOrWhiteSpace(imageUrl))
+            builder.WithImageUrl(imageUrl);
 
         AppendModRoleFooter(builder);
         return builder.Build();
