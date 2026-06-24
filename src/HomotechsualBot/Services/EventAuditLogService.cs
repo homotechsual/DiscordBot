@@ -130,6 +130,10 @@ public class EventAuditLogService
                 ? $"<@{resolvedAuthorId.Value}> ({resolvedAuthorId.Value})"
                 : "Unknown";
 
+            authorAvatarUrl ??= resolvedAuthorId.HasValue
+                ? GetDefaultAvatarUrl(resolvedAuthorId.Value)
+                : GetDefaultAvatarUrl(0);
+
             if (!string.IsNullOrWhiteSpace(content) && content.Length > 1024)
             {
                 content = content[..1021] + "...";
@@ -142,12 +146,8 @@ public class EventAuditLogService
                 .AddField("Author", authorDisplay, inline: true)
                 .AddField("Deleted By", actor?.ActorDisplay ?? "Unknown / self-delete", inline: false)
                 .AddField("Message ID", cachedMessage.Id, inline: true)
+                .WithThumbnailUrl(authorAvatarUrl)
                 .WithTimestamp(DateTimeOffset.UtcNow);
-
-            if (!string.IsNullOrWhiteSpace(authorAvatarUrl))
-            {
-                embed.WithThumbnailUrl(authorAvatarUrl);
-            }
 
             if (!string.IsNullOrWhiteSpace(content))
             {
@@ -460,6 +460,12 @@ public class EventAuditLogService
 
     private static string? GetAuthorAvatarUrl(IUser user)
         => user.GetAvatarUrl(size: 128) ?? user.GetDefaultAvatarUrl();
+
+    private static string GetDefaultAvatarUrl(ulong userId)
+    {
+        var avatarIndex = (int)((userId >> 22) % 6);
+        return $"https://cdn.discordapp.com/embed/avatars/{avatarIndex}.png";
+    }
 
     private bool TryGetRecentMessageSnapshot(ulong messageId, out MessageSnapshot snapshot)
     {
