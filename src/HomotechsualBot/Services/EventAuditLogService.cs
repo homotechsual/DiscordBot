@@ -2,15 +2,20 @@ using Discord;
 using Discord.WebSocket;
 using DiscordBot.Models;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace DiscordBot.Services;
 
 public class EventAuditLogService
 {
+    private const int SnapshotRetentionMinutes = 120;
+    private const int MaxSnapshots = 5000;
+
     private readonly DiscordSocketClient _client;
     private readonly ModerationLogConfig _config;
     private readonly ILogger<EventAuditLogService> _logger;
+    private readonly ConcurrentDictionary<ulong, MessageSnapshot> _recentMessages = new();
 
     public EventAuditLogService(
         DiscordSocketClient client,
@@ -20,6 +25,32 @@ public class EventAuditLogService
         _client = client;
         _config = config;
         _logger = logger;
+    }
+
+    public Task HandleMessageReceivedAsync(SocketMessage message)
+    {
+        if (!_config.EventAuditEnabled || !_config.LogMessageDeletes)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (message.Author.IsBot)
+        {
+            return Task.CompletedTask;
+        }
+
+        _recentMessages[message.Id] = new MessageSnapshot(
+            message.Author.Id,
+            message.Content,
+            message.Channel.Id,
+            DateTimeOffset.UtcNow);
+
+        if (_recentMessages.Count > MaxSnapshots)
+        {
+            PruneSnapshots();
+        }
+
+        return Task.CompletedTask;
     }
 
     public async Task HandleMessageDeletedAsync(
@@ -47,6 +78,17 @@ public class EventAuditLogService
 
             var message = await cachedMessage.GetOrDownloadAsync();
             var authorId = message?.Author.Id;
+            var content = message?.Content;
+
+            if ((!authorId.HasValue || string.IsNullOrWhiteSpace(content)) &&
+                TryGetRecentMessageSnapshot(cachedMessage.Id, out var snapshot))
+            {
+                authorId ??= snapshot.AuthorId;
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    content = snapshot.Content;
+                }
+            }
 
             // Give Discord a moment to propagate the corresponding audit log entry.
             await Task.Delay(1500);
@@ -60,7 +102,6 @@ public class EventAuditLogService
 
             var resolvedAuthorId = authorId ?? actor?.TargetUserId;
 
-            var content = message?.Content;
             if (!string.IsNullOrWhiteSpace(content) && content.Length > 1024)
             {
                 content = content[..1021] + "...";
@@ -86,6 +127,7 @@ public class EventAuditLogService
             }
 
             await auditChannel.SendMessageAsync(embed: embed.Build());
+            _recentMessages.TryRemove(cachedMessage.Id, out _);
         }
         catch (Exception ex)
         {
@@ -373,5 +415,37 @@ public class EventAuditLogService
         }
     }
 
+    private bool TryGetRecentMessageSnapshot(ulong messageId, out MessageSnapshot snapshot)
+    {
+        snapshot = default;
+
+        if (!_recentMessages.TryGetValue(messageId, out var stored))
+        {
+            return false;
+        }
+
+        if (stored.CapturedAt < DateTimeOffset.UtcNow.AddMinutes(-SnapshotRetentionMinutes))
+        {
+            _recentMessages.TryRemove(messageId, out _);
+            return false;
+        }
+
+        snapshot = stored;
+        return true;
+    }
+
+    private void PruneSnapshots()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-SnapshotRetentionMinutes);
+        foreach (var kvp in _recentMessages)
+        {
+            if (kvp.Value.CapturedAt < cutoff)
+            {
+                _recentMessages.TryRemove(kvp.Key, out _);
+            }
+        }
+    }
+
     private sealed record AuditActorInfo(string Action, string ActorDisplay, string? Reason, ulong? TargetUserId);
+    private readonly record struct MessageSnapshot(ulong AuthorId, string? Content, ulong ChannelId, DateTimeOffset CapturedAt);
 }
