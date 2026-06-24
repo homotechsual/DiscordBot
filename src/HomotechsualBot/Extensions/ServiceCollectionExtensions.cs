@@ -112,7 +112,8 @@ public static class ServiceCollectionExtensions
             // are not enabled in the Discord developer portal.
             AlwaysDownloadUsers = false,
             GatewayIntents = gatewayIntents,
-            LogLevel = LogSeverity.Info
+            LogLevel = LogSeverity.Info,
+            MessageCacheSize = modLogConfig.EventAuditEnabled && modLogConfig.LogMessageDeletes ? 1000 : 0
         };
         services.AddSingleton(socketConfig);
         services.AddSingleton<DiscordSocketClient>();
