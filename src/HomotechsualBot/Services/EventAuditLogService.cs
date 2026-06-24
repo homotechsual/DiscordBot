@@ -134,6 +134,14 @@ public class EventAuditLogService
                 ? GetDefaultAvatarUrl(resolvedAuthorId.Value)
                 : GetDefaultAvatarUrl(0);
 
+            var authorMention = resolvedAuthorId.HasValue
+                ? $"<@{resolvedAuthorId.Value}>"
+                : "Unknown";
+
+            var authorFieldValue = resolvedAuthorId.HasValue
+                ? $"{authorMention} ({resolvedAuthorId.Value})"
+                : authorDisplay;
+
             if (!string.IsNullOrWhiteSpace(content) && content.Length > 1024)
             {
                 content = content[..1021] + "...";
@@ -142,8 +150,9 @@ public class EventAuditLogService
             var embed = new EmbedBuilder()
                 .WithTitle("🗑️ Message Deleted")
                 .WithColor(new Color(0xE67E22))
+                .WithAuthor(authorDisplay, iconUrl: authorAvatarUrl)
                 .AddField("Channel", $"<#{textChannel.Id}>", inline: true)
-                .AddField("Author", authorDisplay, inline: true)
+                .AddField("Author", authorFieldValue, inline: true)
                 .AddField("Deleted By", actor?.ActorDisplay ?? "Unknown / self-delete", inline: false)
                 .AddField("Message ID", cachedMessage.Id, inline: true)
                 .WithThumbnailUrl(authorAvatarUrl)
