@@ -43,6 +43,8 @@ public class EventAuditLogService
             message.Author.Id,
             message.Content,
             message.Channel.Id,
+            GetAuthorDisplay(message.Author),
+            GetAuthorAvatarUrl(message.Author),
             DateTimeOffset.UtcNow);
 
         if (_recentMessages.Count > MaxSnapshots)
@@ -79,6 +81,8 @@ public class EventAuditLogService
             var message = await cachedMessage.GetOrDownloadAsync();
             var authorId = message?.Author.Id;
             var content = message?.Content;
+            var authorDisplay = message?.Author is null ? null : GetAuthorDisplay(message.Author);
+            var authorAvatarUrl = message?.Author is null ? null : GetAuthorAvatarUrl(message.Author);
 
             if ((!authorId.HasValue || string.IsNullOrWhiteSpace(content)) &&
                 TryGetRecentMessageSnapshot(cachedMessage.Id, out var snapshot))
@@ -87,6 +91,16 @@ public class EventAuditLogService
                 if (string.IsNullOrWhiteSpace(content))
                 {
                     content = snapshot.Content;
+                }
+
+                if (string.IsNullOrWhiteSpace(authorDisplay))
+                {
+                    authorDisplay = snapshot.AuthorDisplay;
+                }
+
+                if (string.IsNullOrWhiteSpace(authorAvatarUrl))
+                {
+                    authorAvatarUrl = snapshot.AuthorAvatarUrl;
                 }
             }
 
@@ -102,6 +116,20 @@ public class EventAuditLogService
 
             var resolvedAuthorId = authorId ?? actor?.TargetUserId;
 
+            if (resolvedAuthorId.HasValue && (string.IsNullOrWhiteSpace(authorDisplay) || string.IsNullOrWhiteSpace(authorAvatarUrl)))
+            {
+                var resolvedUser = await textChannel.Guild.GetUserAsync(resolvedAuthorId.Value, CacheMode.AllowDownload);
+                if (resolvedUser is not null)
+                {
+                    authorDisplay ??= GetAuthorDisplay(resolvedUser);
+                    authorAvatarUrl ??= GetAuthorAvatarUrl(resolvedUser);
+                }
+            }
+
+            authorDisplay ??= resolvedAuthorId.HasValue
+                ? $"<@{resolvedAuthorId.Value}> ({resolvedAuthorId.Value})"
+                : "Unknown";
+
             if (!string.IsNullOrWhiteSpace(content) && content.Length > 1024)
             {
                 content = content[..1021] + "...";
@@ -111,10 +139,15 @@ public class EventAuditLogService
                 .WithTitle("🗑️ Message Deleted")
                 .WithColor(new Color(0xE67E22))
                 .AddField("Channel", $"<#{textChannel.Id}>", inline: true)
-                .AddField("Author", resolvedAuthorId.HasValue ? $"<@{resolvedAuthorId.Value}> ({resolvedAuthorId.Value})" : "Unknown", inline: true)
+                .AddField("Author", authorDisplay, inline: true)
                 .AddField("Deleted By", actor?.ActorDisplay ?? "Unknown / self-delete", inline: false)
                 .AddField("Message ID", cachedMessage.Id, inline: true)
                 .WithTimestamp(DateTimeOffset.UtcNow);
+
+            if (!string.IsNullOrWhiteSpace(authorAvatarUrl))
+            {
+                embed.WithThumbnailUrl(authorAvatarUrl);
+            }
 
             if (!string.IsNullOrWhiteSpace(content))
             {
@@ -415,6 +448,19 @@ public class EventAuditLogService
         }
     }
 
+    private static string GetAuthorDisplay(IUser user)
+    {
+        if (user is SocketGuildUser guildUser && !string.IsNullOrWhiteSpace(guildUser.DisplayName))
+        {
+            return $"{guildUser.DisplayName} (@{user.Username})";
+        }
+
+        return user.Username;
+    }
+
+    private static string? GetAuthorAvatarUrl(IUser user)
+        => user.GetAvatarUrl(size: 128) ?? user.GetDefaultAvatarUrl();
+
     private bool TryGetRecentMessageSnapshot(ulong messageId, out MessageSnapshot snapshot)
     {
         snapshot = default;
@@ -447,5 +493,11 @@ public class EventAuditLogService
     }
 
     private sealed record AuditActorInfo(string Action, string ActorDisplay, string? Reason, ulong? TargetUserId);
-    private readonly record struct MessageSnapshot(ulong AuthorId, string? Content, ulong ChannelId, DateTimeOffset CapturedAt);
+    private readonly record struct MessageSnapshot(
+        ulong AuthorId,
+        string? Content,
+        ulong ChannelId,
+        string AuthorDisplay,
+        string? AuthorAvatarUrl,
+        DateTimeOffset CapturedAt);
 }
