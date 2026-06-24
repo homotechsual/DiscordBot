@@ -146,6 +146,11 @@ jobs:
         'HOMOTECHSUALBOT_Bot__Heartbeat__TimeoutSeconds=${{ secrets.HEARTBEAT_TIMEOUT_SECONDS || '10' }}' \
         'HOMOTECHSUALBOT_ModerationLog__ForumChannelId=${{ secrets.MODERATION_LOG_FORUM_CHANNEL_ID || '0' }}' \
         'HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId=${{ secrets.MODERATION_LOG_MODERATOR_ROLE_ID || '0' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__EventAuditEnabled=${{ secrets.MODERATION_LOG_EVENT_AUDIT_ENABLED || 'false' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__EventAuditChannelId=${{ secrets.MODERATION_LOG_EVENT_AUDIT_CHANNEL_ID || '0' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__LogMessageDeletes=${{ secrets.MODERATION_LOG_EVENT_AUDIT_LOG_MESSAGE_DELETES || 'true' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__LogMemberLeaves=${{ secrets.MODERATION_LOG_EVENT_AUDIT_LOG_MEMBER_LEAVES || 'true' }}' \
+        'HOMOTECHSUALBOT_ModerationLog__AuditLogLookbackSeconds=${{ secrets.MODERATION_LOG_AUDIT_LOG_LOOKBACK_SECONDS || '20' }}' \
         'HOMOTECHSUALBOT_CrossChannelSpam__Enabled=${{ secrets.CROSS_CHANNEL_SPAM_ENABLED || 'false' }}' \
         'HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=${{ secrets.CROSS_CHANNEL_SPAM_TIME_WINDOW_SECONDS || '30' }}' \
         'HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=${{ secrets.CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT || '3' }}' \

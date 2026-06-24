@@ -22,6 +22,7 @@ public class DiscordBotService
     private readonly SingleMessageService _singleMessageService;
     private readonly CrossChannelSpamDetector _spamDetector;
     private readonly CommandAccessService _commandAccessService;
+    private readonly EventAuditLogService _eventAuditLogService;
     private readonly TaskCompletionSource<bool> _readyCompletionSource = new();
     private int _commandsRegistered;
 
@@ -35,7 +36,8 @@ public class DiscordBotService
         ILogger<DiscordBotService> logger,
         SingleMessageService singleMessageService,
         CrossChannelSpamDetector spamDetector,
-        CommandAccessService commandAccessService)
+        CommandAccessService commandAccessService,
+        EventAuditLogService eventAuditLogService)
     {
         _client = client;
         _interactionService = interactionService;
@@ -45,6 +47,7 @@ public class DiscordBotService
         _singleMessageService = singleMessageService;
         _spamDetector = spamDetector;
         _commandAccessService = commandAccessService;
+        _eventAuditLogService = eventAuditLogService;
 
         // Subscribe to Discord events
         _client.Log += LogAsync;
@@ -55,6 +58,8 @@ public class DiscordBotService
         _client.GuildAvailable += GuildAvailableAsync;
         _client.MessageReceived += _singleMessageService.HandleMessageAsync;
         _client.MessageReceived += _spamDetector.HandleMessageAsync;
+        _client.MessageDeleted += _eventAuditLogService.HandleMessageDeletedAsync;
+        _client.UserLeft += _eventAuditLogService.HandleUserLeftAsync;
 
         // Log interaction service events
         _interactionService.Log += LogAsync;

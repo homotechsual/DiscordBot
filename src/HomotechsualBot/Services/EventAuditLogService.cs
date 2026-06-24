@@ -1,0 +1,346 @@
+using Discord;
+using Discord.WebSocket;
+using DiscordBot.Models;
+using Microsoft.Extensions.Logging;
+using System.Reflection;
+
+namespace DiscordBot.Services;
+
+public class EventAuditLogService
+{
+    private readonly DiscordSocketClient _client;
+    private readonly ModerationLogConfig _config;
+    private readonly ILogger<EventAuditLogService> _logger;
+
+    public EventAuditLogService(
+        DiscordSocketClient client,
+        ModerationLogConfig config,
+        ILogger<EventAuditLogService> logger)
+    {
+        _client = client;
+        _config = config;
+        _logger = logger;
+    }
+
+    public async Task HandleMessageDeletedAsync(
+        Cacheable<IMessage, ulong> cachedMessage,
+        Cacheable<IMessageChannel, ulong> cachedChannel)
+    {
+        if (!_config.EventAuditEnabled || !_config.LogMessageDeletes || _config.EventAuditChannelId == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var channel = await cachedChannel.GetOrDownloadAsync();
+            if (channel is not ITextChannel textChannel)
+            {
+                return;
+            }
+
+            var auditChannel = await ResolveAuditChannelAsync();
+            if (auditChannel is null)
+            {
+                return;
+            }
+
+            var message = await cachedMessage.GetOrDownloadAsync();
+            var authorId = message?.Author.Id;
+
+            // Give Discord a moment to propagate the corresponding audit log entry.
+            await Task.Delay(1500);
+
+            var actor = await FindRecentAuditActorAsync(
+                textChannel.Guild,
+                actionKeywords: ["MessageDeleted"],
+                targetUserId: authorId,
+                channelId: textChannel.Id);
+
+            var content = message?.Content;
+            if (!string.IsNullOrWhiteSpace(content) && content.Length > 1024)
+            {
+                content = content[..1021] + "...";
+            }
+
+            var embed = new EmbedBuilder()
+                .WithTitle("🗑️ Message Deleted")
+                .WithColor(new Color(0xE67E22))
+                .AddField("Channel", $"<#{textChannel.Id}>", inline: true)
+                .AddField("Author", authorId.HasValue ? $"<@{authorId.Value}> ({authorId.Value})" : "Unknown", inline: true)
+                .AddField("Deleted By", actor?.ActorDisplay ?? "Unknown / self-delete", inline: false)
+                .AddField("Message ID", cachedMessage.Id, inline: true)
+                .WithTimestamp(DateTimeOffset.UtcNow);
+
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                embed.AddField("Content", content);
+            }
+
+            if (!string.IsNullOrWhiteSpace(actor?.Reason))
+            {
+                embed.AddField("Reason", actor.Reason);
+            }
+
+            await auditChannel.SendMessageAsync(embed: embed.Build());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EventAudit: failed to log a message deletion event");
+        }
+    }
+
+    public async Task HandleUserLeftAsync(SocketGuild guild, SocketUser user)
+    {
+        if (!_config.EventAuditEnabled || !_config.LogMemberLeaves || _config.EventAuditChannelId == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var auditChannel = await ResolveAuditChannelAsync();
+            if (auditChannel is null || auditChannel.GuildId != guild.Id)
+            {
+                return;
+            }
+
+            // Kicks/bans often appear in audit logs slightly after the leave event.
+            await Task.Delay(1500);
+
+            var actor = await FindRecentAuditActorAsync(
+                guild,
+                actionKeywords: ["Kick", "Ban"],
+                targetUserId: user.Id,
+                channelId: null);
+
+            var title = actor is null ? "👋 Member Left" : "🚪 Member Removed";
+            var action = actor is null ? "Voluntary leave (or no matching audit log entry)" : actor.Action;
+
+            var embed = new EmbedBuilder()
+                .WithTitle(title)
+                .WithColor(actor is null ? new Color(0x95A5A6) : new Color(0xE74C3C))
+                .AddField("Member", $"<@{user.Id}> ({user.Id})", inline: true)
+                .AddField("Action", action, inline: true)
+                .AddField("Actor", actor?.ActorDisplay ?? "Unknown", inline: true)
+                .WithTimestamp(DateTimeOffset.UtcNow);
+
+            if (!string.IsNullOrWhiteSpace(actor?.Reason))
+            {
+                embed.AddField("Reason", actor.Reason);
+            }
+
+            await auditChannel.SendMessageAsync(embed: embed.Build());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EventAudit: failed to log a member leave event for user {UserId}", user.Id);
+        }
+    }
+
+    private async Task<ITextChannel?> ResolveAuditChannelAsync()
+    {
+        if (_client.GetChannel(_config.EventAuditChannelId) is ITextChannel cachedTextChannel)
+        {
+            return cachedTextChannel;
+        }
+
+        try
+        {
+            var restChannel = await _client.Rest.GetChannelAsync(_config.EventAuditChannelId);
+            if (restChannel is ITextChannel textChannel)
+            {
+                return textChannel;
+            }
+
+            _logger.LogWarning(
+                "EventAudit: configured channel {ChannelId} is not a standard text channel",
+                _config.EventAuditChannelId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EventAudit: failed to resolve channel {ChannelId}", _config.EventAuditChannelId);
+        }
+
+        return null;
+    }
+
+    private async Task<AuditActorInfo?> FindRecentAuditActorAsync(
+        IGuild guild,
+        IReadOnlyList<string> actionKeywords,
+        ulong? targetUserId,
+        ulong? channelId)
+    {
+        try
+        {
+            var lookbackCutoff = DateTimeOffset.UtcNow.AddSeconds(-Math.Max(5, _config.AuditLogLookbackSeconds));
+            var entries = await guild.GetAuditLogsAsync(25);
+
+            foreach (var entry in entries)
+            {
+                var actionText = GetActionText(entry);
+                if (string.IsNullOrWhiteSpace(actionText) ||
+                    !actionKeywords.Any(k => actionText.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                var createdAt = GetCreatedAt(entry);
+                if (createdAt < lookbackCutoff)
+                {
+                    continue;
+                }
+
+                if (targetUserId.HasValue && TryGetTargetUserId(entry, out var targetId) && targetId != targetUserId.Value)
+                {
+                    continue;
+                }
+
+                if (channelId.HasValue && TryGetChannelId(entry, out var loggedChannelId) && loggedChannelId != channelId.Value)
+                {
+                    continue;
+                }
+
+                var actorDisplay = TryGetActorDisplay(entry, out var actor)
+                    ? actor
+                    : "Unknown";
+
+                return new AuditActorInfo(actionText, actorDisplay, GetReason(entry));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "EventAudit: failed to query audit logs in guild {GuildId}", guild.Id);
+        }
+
+        return null;
+    }
+
+    private static string? GetActionText(object entry)
+        => entry.GetType().GetProperty("Action", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry)
+            ?.ToString();
+
+    private static DateTimeOffset GetCreatedAt(object entry)
+    {
+        var createdAtValue = entry.GetType().GetProperty("CreatedAt", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        return createdAtValue switch
+        {
+            DateTimeOffset dto => dto,
+            DateTime dt => new DateTimeOffset(dt),
+            _ => DateTimeOffset.MinValue
+        };
+    }
+
+    private static string? GetReason(object entry)
+        => entry.GetType().GetProperty("Reason", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry)
+            ?.ToString();
+
+    private static bool TryGetActorDisplay(object entry, out string actorDisplay)
+    {
+        actorDisplay = string.Empty;
+
+        var userValue = entry.GetType().GetProperty("User", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        if (userValue is IUser user)
+        {
+            actorDisplay = $"<@{user.Id}> ({user.Id})";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetTargetUserId(object entry, out ulong targetUserId)
+    {
+        targetUserId = 0;
+
+        var directTargetId = entry.GetType().GetProperty("TargetId", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        if (TryConvertToUlong(directTargetId, out targetUserId))
+        {
+            return true;
+        }
+
+        var targetValue = entry.GetType().GetProperty("Target", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        if (TryGetIdProperty(targetValue, out targetUserId))
+        {
+            return true;
+        }
+
+        var dataValue = entry.GetType().GetProperty("Data", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        if (dataValue is null)
+        {
+            return false;
+        }
+
+        var dataTarget = dataValue.GetType().GetProperty("Target", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(dataValue);
+
+        return TryGetIdProperty(dataTarget, out targetUserId);
+    }
+
+    private static bool TryGetChannelId(object entry, out ulong channelId)
+    {
+        channelId = 0;
+
+        var dataValue = entry.GetType().GetProperty("Data", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        if (dataValue is null)
+        {
+            return false;
+        }
+
+        var channelValue = dataValue.GetType().GetProperty("ChannelId", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(dataValue);
+
+        return TryConvertToUlong(channelValue, out channelId);
+    }
+
+    private static bool TryGetIdProperty(object? value, out ulong id)
+    {
+        id = 0;
+
+        if (value is null)
+        {
+            return false;
+        }
+
+        var idValue = value.GetType().GetProperty("Id", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(value);
+
+        return TryConvertToUlong(idValue, out id);
+    }
+
+    private static bool TryConvertToUlong(object? value, out ulong result)
+    {
+        result = 0;
+
+        switch (value)
+        {
+            case ulong ulongValue:
+                result = ulongValue;
+                return true;
+            case long longValue when longValue >= 0:
+                result = (ulong)longValue;
+                return true;
+            case int intValue when intValue >= 0:
+                result = (ulong)intValue;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private sealed record AuditActorInfo(string Action, string ActorDisplay, string? Reason);
+}

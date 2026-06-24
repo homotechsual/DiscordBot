@@ -366,6 +366,11 @@ If you deploy with `.github/workflows/deploy.yml`, configure these repository se
 | `HEARTBEAT_TIMEOUT_SECONDS` | `HOMOTECHSUALBOT_Bot__Heartbeat__TimeoutSeconds` |
 | `MODERATION_LOG_FORUM_CHANNEL_ID` | `HOMOTECHSUALBOT_ModerationLog__ForumChannelId` |
 | `MODERATION_LOG_MODERATOR_ROLE_ID` | `HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId` |
+| `MODERATION_LOG_EVENT_AUDIT_ENABLED` | `HOMOTECHSUALBOT_ModerationLog__EventAuditEnabled` |
+| `MODERATION_LOG_EVENT_AUDIT_CHANNEL_ID` | `HOMOTECHSUALBOT_ModerationLog__EventAuditChannelId` |
+| `MODERATION_LOG_EVENT_AUDIT_LOG_MESSAGE_DELETES` | `HOMOTECHSUALBOT_ModerationLog__LogMessageDeletes` |
+| `MODERATION_LOG_EVENT_AUDIT_LOG_MEMBER_LEAVES` | `HOMOTECHSUALBOT_ModerationLog__LogMemberLeaves` |
+| `MODERATION_LOG_AUDIT_LOG_LOOKBACK_SECONDS` | `HOMOTECHSUALBOT_ModerationLog__AuditLogLookbackSeconds` |
 | `CROSS_CHANNEL_SPAM_ENABLED` | `HOMOTECHSUALBOT_CrossChannelSpam__Enabled` |
 | `CROSS_CHANNEL_SPAM_TIME_WINDOW_SECONDS` | `HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds` |
 | `CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT` | `HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount` |
