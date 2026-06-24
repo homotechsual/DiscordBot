@@ -55,7 +55,10 @@ public class EventAuditLogService
                 textChannel.Guild,
                 actionKeywords: ["MessageDeleted"],
                 targetUserId: authorId,
-                channelId: textChannel.Id);
+                channelId: textChannel.Id,
+                messageId: cachedMessage.Id);
+
+            var resolvedAuthorId = authorId ?? actor?.TargetUserId;
 
             var content = message?.Content;
             if (!string.IsNullOrWhiteSpace(content) && content.Length > 1024)
@@ -67,7 +70,7 @@ public class EventAuditLogService
                 .WithTitle("🗑️ Message Deleted")
                 .WithColor(new Color(0xE67E22))
                 .AddField("Channel", $"<#{textChannel.Id}>", inline: true)
-                .AddField("Author", authorId.HasValue ? $"<@{authorId.Value}> ({authorId.Value})" : "Unknown", inline: true)
+                .AddField("Author", resolvedAuthorId.HasValue ? $"<@{resolvedAuthorId.Value}> ({resolvedAuthorId.Value})" : "Unknown", inline: true)
                 .AddField("Deleted By", actor?.ActorDisplay ?? "Unknown / self-delete", inline: false)
                 .AddField("Message ID", cachedMessage.Id, inline: true)
                 .WithTimestamp(DateTimeOffset.UtcNow);
@@ -169,7 +172,8 @@ public class EventAuditLogService
         IGuild guild,
         IReadOnlyList<string> actionKeywords,
         ulong? targetUserId,
-        ulong? channelId)
+        ulong? channelId,
+        ulong? messageId = null)
     {
         try
         {
@@ -201,11 +205,20 @@ public class EventAuditLogService
                     continue;
                 }
 
+                if (messageId.HasValue && TryGetMessageId(entry, out var loggedMessageId) && loggedMessageId != messageId.Value)
+                {
+                    continue;
+                }
+
                 var actorDisplay = TryGetActorDisplay(entry, out var actor)
                     ? actor
                     : "Unknown";
 
-                return new AuditActorInfo(actionText, actorDisplay, GetReason(entry));
+                ulong? matchedTargetUserId = TryGetTargetUserId(entry, out var matchedTargetId)
+                    ? matchedTargetId
+                    : null;
+
+                return new AuditActorInfo(actionText, actorDisplay, GetReason(entry), matchedTargetUserId);
             }
         }
         catch (Exception ex)
@@ -307,6 +320,24 @@ public class EventAuditLogService
         return TryConvertToUlong(channelValue, out channelId);
     }
 
+    private static bool TryGetMessageId(object entry, out ulong messageId)
+    {
+        messageId = 0;
+
+        var dataValue = entry.GetType().GetProperty("Data", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(entry);
+
+        if (dataValue is null)
+        {
+            return false;
+        }
+
+        var messageValue = dataValue.GetType().GetProperty("MessageId", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(dataValue);
+
+        return TryConvertToUlong(messageValue, out messageId);
+    }
+
     private static bool TryGetIdProperty(object? value, out ulong id)
     {
         id = 0;
@@ -342,5 +373,5 @@ public class EventAuditLogService
         }
     }
 
-    private sealed record AuditActorInfo(string Action, string ActorDisplay, string? Reason);
+    private sealed record AuditActorInfo(string Action, string ActorDisplay, string? Reason, ulong? TargetUserId);
 }
