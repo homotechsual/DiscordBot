@@ -99,7 +99,7 @@ public static class ServiceCollectionExtensions
                              GatewayIntents.DirectMessages |
                              GatewayIntents.MessageContent;
 
-        if (modLogConfig.EventAuditEnabled && modLogConfig.LogMemberLeaves)
+        if (modLogConfig.EventAuditEnabled && (modLogConfig.LogMemberLeaves || modLogConfig.LogMemberJoins))
         {
             // User-left events require the privileged GuildMembers intent.
             gatewayIntents |= GatewayIntents.GuildMembers;

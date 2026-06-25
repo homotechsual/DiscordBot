@@ -39,6 +39,11 @@ public class EventAuditLogService
             return Task.CompletedTask;
         }
 
+        if (IsIgnoredUser(message.Author.Id))
+        {
+            return Task.CompletedTask;
+        }
+
         _recentMessages[message.Id] = new MessageSnapshot(
             message.Author.Id,
             message.Content,
@@ -104,7 +109,6 @@ public class EventAuditLogService
                 }
             }
 
-            // Give Discord a moment to propagate the corresponding audit log entry.
             await Task.Delay(1500);
 
             var actor = await FindRecentAuditActorAsync(
@@ -115,6 +119,11 @@ public class EventAuditLogService
                 messageId: cachedMessage.Id);
 
             var resolvedAuthorId = authorId ?? actor?.TargetUserId;
+
+            if (resolvedAuthorId.HasValue && IsIgnoredUser(resolvedAuthorId.Value))
+            {
+                return;
+            }
 
             if (resolvedAuthorId.HasValue && (string.IsNullOrWhiteSpace(authorDisplay) || string.IsNullOrWhiteSpace(authorAvatarUrl)))
             {
@@ -184,6 +193,11 @@ public class EventAuditLogService
             return;
         }
 
+        if (IsIgnoredUser(user.Id))
+        {
+            return;
+        }
+
         try
         {
             var auditChannel = await ResolveAuditChannelAsync();
@@ -192,7 +206,6 @@ public class EventAuditLogService
                 return;
             }
 
-            // Kicks/bans often appear in audit logs slightly after the leave event.
             await Task.Delay(1500);
 
             var actor = await FindRecentAuditActorAsync(
@@ -222,6 +235,40 @@ public class EventAuditLogService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "EventAudit: failed to log a member leave event for user {UserId}", user.Id);
+        }
+    }
+
+    public async Task HandleUserJoinedAsync(SocketGuildUser user)
+    {
+        if (!_config.EventAuditEnabled || !_config.LogMemberJoins || _config.EventAuditChannelId == 0)
+        {
+            return;
+        }
+
+        if (IsIgnoredUser(user.Id))
+        {
+            return;
+        }
+
+        try
+        {
+            var auditChannel = await ResolveAuditChannelAsync();
+            if (auditChannel is null || auditChannel.GuildId != user.Guild.Id)
+            {
+                return;
+            }
+
+            var embed = new EmbedBuilder()
+                .WithTitle("📥 Member Joined")
+                .WithColor(new Color(0x2ECC71))
+                .AddField("Member", $"<@{user.Id}> ({user.Id})", inline: true)
+                .WithTimestamp(DateTimeOffset.UtcNow);
+
+            await auditChannel.SendMessageAsync(embed: embed.Build());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EventAudit: failed to log a member join event for user {UserId}", user.Id);
         }
     }
 
@@ -475,6 +522,9 @@ public class EventAuditLogService
         var avatarIndex = (int)((userId >> 22) % 6);
         return $"https://cdn.discordapp.com/embed/avatars/{avatarIndex}.png";
     }
+
+    private bool IsIgnoredUser(ulong userId)
+        => _config.IgnoredUserIds.Contains(userId);
 
     private bool TryGetRecentMessageSnapshot(ulong messageId, out MessageSnapshot snapshot)
     {

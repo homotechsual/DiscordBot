@@ -9,5 +9,9 @@
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Temporary suppression for GHSA-2m69-gcr7-jv3q. Remove this once SQLitePCLRaw.lib.e_sqlite3 publishes a patched NuGet version. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
+  </ItemGroup>
   <Import Condition="Exists(&apos;$(MSBuildProjectDirectory)\obj\$(MSBuildProjectFile).EntityFrameworkCore.targets&apos;)" Project="$(MSBuildProjectDirectory)\obj\$(MSBuildProjectFile).EntityFrameworkCore.targets"/>
 </Project>
