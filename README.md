@@ -370,6 +370,9 @@ If you deploy with `.github/workflows/deploy.yml`, configure these repository se
 | `MODERATION_LOG_EVENT_AUDIT_CHANNEL_ID` | `HOMOTECHSUALBOT_ModerationLog__EventAuditChannelId` |
 | `MODERATION_LOG_EVENT_AUDIT_LOG_MESSAGE_DELETES` | `HOMOTECHSUALBOT_ModerationLog__LogMessageDeletes` |
 | `MODERATION_LOG_EVENT_AUDIT_LOG_MEMBER_LEAVES` | `HOMOTECHSUALBOT_ModerationLog__LogMemberLeaves` |
+| `MODERATION_LOG_EVENT_AUDIT_LOG_MEMBER_JOINS` | `HOMOTECHSUALBOT_ModerationLog__LogMemberJoins` |
+| `MODERATION_LOG_IGNORED_USER_ID_0` | `HOMOTECHSUALBOT_ModerationLog__IgnoredUserIds__0` |
+| `MODERATION_LOG_IGNORED_USER_ID_1` | `HOMOTECHSUALBOT_ModerationLog__IgnoredUserIds__1` |
 | `MODERATION_LOG_AUDIT_LOG_LOOKBACK_SECONDS` | `HOMOTECHSUALBOT_ModerationLog__AuditLogLookbackSeconds` |
 | `CROSS_CHANNEL_SPAM_ENABLED` | `HOMOTECHSUALBOT_CrossChannelSpam__Enabled` |
 | `CROSS_CHANNEL_SPAM_TIME_WINDOW_SECONDS` | `HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds` |
