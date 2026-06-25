@@ -26,7 +26,8 @@ public class ModerationLogService
         IReadOnlyList<ITextChannel> channels,
         string fingerprint,
         IReadOnlyList<(ulong ChannelId, ulong MessageId)> deletedMessages,
-        string? imageUrl = null)
+        byte[]? imageBytes = null,
+        string? imageFilename = null)
     {
         if (_config.ForumChannelId == 0) return;
 
@@ -43,10 +44,19 @@ public class ModerationLogService
                 ? $"[{user.Id}] {user.Username}"
                 : $"Unknown User - {ModerationActionType.SpamDetected} (ID: 0)";
 
-            var embed = BuildSpamEmbed(user, channels, fingerprint, imageUrl);
+            var embed = BuildSpamEmbed(user, channels, fingerprint, imageFilename);
             var components = BuildSpamButtons(user?.Id ?? 0, forum.Guild.Id);
 
-            await forum.CreatePostAsync(threadTitle, embed: embed, components: components);
+            if (imageBytes is not null && imageFilename is not null)
+            {
+                await using var stream = new MemoryStream(imageBytes, writable: false);
+                var attachment = new FileAttachment(stream, imageFilename);
+                await forum.CreatePostWithFilesAsync(threadTitle, [attachment], embed: embed, components: components);
+            }
+            else
+            {
+                await forum.CreatePostAsync(threadTitle, embed: embed, components: components);
+            }
         }
         catch (Exception ex)
         {
@@ -104,11 +114,9 @@ public class ModerationLogService
         IUser? user,
         IReadOnlyList<ITextChannel> channels,
         string fingerprint,
-        string? imageUrl = null)
+        string? imageFilename = null)
     {
-        var parts = fingerprint.Split('|', 2);
-        var text = parts[0];
-        var attachments = parts.Length > 1 ? parts[1] : string.Empty;
+        var text = fingerprint.Split('|', 2)[0];
         var channelMentions = channels.Count > 0
             ? string.Join(", ", channels.Select(c => $"<#{c.Id}>"))
             : "Unknown";
@@ -122,11 +130,8 @@ public class ModerationLogService
             .AddField("Action", "28-day timeout applied")
             .WithTimestamp(DateTimeOffset.UtcNow);
 
-        if (!string.IsNullOrWhiteSpace(attachments))
-            builder.AddField("Attachments", attachments);
-
-        if (!string.IsNullOrWhiteSpace(imageUrl))
-            builder.WithImageUrl(imageUrl);
+        if (!string.IsNullOrWhiteSpace(imageFilename))
+            builder.WithImageUrl($"attachment://{imageFilename}");
 
         AppendModRoleFooter(builder);
         return builder.Build();

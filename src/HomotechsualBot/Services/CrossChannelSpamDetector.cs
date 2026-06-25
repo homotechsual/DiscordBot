@@ -20,6 +20,7 @@ public sealed class CrossChannelSpamDetector : IDisposable
     private readonly object _lock = new();
     private readonly Timer _cleanupTimer;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<List<SpamCandidate>>> _pendingLiveTests = new();
+    private readonly ConcurrentDictionary<ulong, DateTimeOffset> _confirmedSpammers = new();
 
     public CrossChannelSpamDetector(
         DiscordSocketClient client,
@@ -68,6 +69,24 @@ public sealed class CrossChannelSpamDetector : IDisposable
             return;
         }
 
+        if (!isSelfTest &&
+            _confirmedSpammers.TryGetValue(message.Author.Id, out var confirmedAt) &&
+            DateTimeOffset.UtcNow - confirmedAt < TimeSpan.FromSeconds(60))
+        {
+            if (_config.DeleteMessages)
+            {
+                try
+                {
+                    await message.DeleteAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Spam: could not delete follow-on message {MessageId} from confirmed spammer {UserId}", message.Id, message.Author.Id);
+                }
+            }
+            return;
+        }
+
         var fingerprint = ComputeFingerprint(
             message.Content ?? string.Empty,
             message.Attachments.Select(AttachmentInfo.FromDiscord));
@@ -104,6 +123,7 @@ public sealed class CrossChannelSpamDetector : IDisposable
                 return;
             }
 
+            _confirmedSpammers[message.Author.Id] = DateTimeOffset.UtcNow;
             await EnforceAsync(message, channel, burst);
         }
     }
@@ -217,6 +237,25 @@ public sealed class CrossChannelSpamDetector : IDisposable
         var guild = triggeringChannel.Guild;
         var userId = triggeringMessage.Author.Id;
 
+        // Download image before deleting — CDN URLs become inaccessible once the message is gone
+        byte[]? imageBytes = null;
+        string? imageFilename = null;
+        var imageAttachment = triggeringMessage.Attachments
+            .FirstOrDefault(a => (a.ContentType ?? string.Empty).StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+        if (imageAttachment is not null)
+        {
+            try
+            {
+                using var httpClient = new HttpClient();
+                imageBytes = await httpClient.GetByteArrayAsync(imageAttachment.Url);
+                imageFilename = imageAttachment.Filename;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Spam: failed to download image attachment from {Url}", imageAttachment.Url);
+            }
+        }
+
         var deleted = new List<(ulong ChannelId, ulong MessageId)>();
         if (_config.DeleteMessages)
         {
@@ -275,11 +314,7 @@ public sealed class CrossChannelSpamDetector : IDisposable
             .Distinct()
             .ToList();
 
-        var imageUrl = triggeringMessage.Attachments
-            .FirstOrDefault(a => (a.ContentType ?? string.Empty).StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            ?.Url;
-
-        await _logService.LogSpamDetectedAsync(triggeringMessage.Author, channels, burst[0].Fingerprint, deleted, imageUrl);
+        await _logService.LogSpamDetectedAsync(triggeringMessage.Author, channels, burst[0].Fingerprint, deleted, imageBytes, imageFilename);
     }
 
     public static string ComputeFingerprint(string content, IEnumerable<AttachmentInfo> attachments)
@@ -376,6 +411,13 @@ public sealed class CrossChannelSpamDetector : IDisposable
                 if (list.Count == 0)
                     _candidates.TryRemove(key, out _);
             }
+        }
+
+        var spammerExpiry = now.AddSeconds(-60);
+        foreach (var key in _confirmedSpammers.Keys.ToArray())
+        {
+            if (_confirmedSpammers.TryGetValue(key, out var confirmedAt) && confirmedAt < spammerExpiry)
+                _confirmedSpammers.TryRemove(key, out _);
         }
     }
 
