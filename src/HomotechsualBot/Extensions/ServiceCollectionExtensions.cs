@@ -134,6 +134,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<SingleMessageService>();
         services.AddSingleton<ModerationLogService>();
         services.AddSingleton<CrossChannelSpamDetector>();
+        services.AddSingleton<DiscordBot.Modules.Moderations.MoveMessagesModule>();
         services.AddSingleton<EventAuditLogService>();
         services.AddHttpClient<HeartbeatMonitorService>();
         if (botConfig.YoutubeMonitor.Enabled)

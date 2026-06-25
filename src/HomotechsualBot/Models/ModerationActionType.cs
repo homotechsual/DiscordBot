@@ -10,6 +10,8 @@ public enum ModerationActionType
     Warn,
     PurgeUser,
     ClearMessages,
+    MoveMessages,
+    MoveThread,
     LockChannel,
     UnlockChannel,
     SlowModeSet,
