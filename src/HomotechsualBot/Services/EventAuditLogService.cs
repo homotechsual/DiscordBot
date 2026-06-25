@@ -79,6 +79,8 @@ public class EventAuditLogService
             }
 
             var message = await cachedMessage.GetOrDownloadAsync();
+            if (message?.Author.IsBot == true) return;
+
             var authorId = message?.Author.Id;
             var content = message?.Content;
             var authorDisplay = message?.Author is null ? null : GetAuthorDisplay(message.Author);
@@ -125,6 +127,7 @@ public class EventAuditLogService
                 var resolvedUser = await textChannel.Guild.GetUserAsync(resolvedAuthorId.Value, CacheMode.AllowDownload);
                 if (resolvedUser is not null)
                 {
+                    if (resolvedUser.IsBot) return;
                     authorDisplay ??= GetAuthorDisplay(resolvedUser);
                     authorAvatarUrl ??= GetAuthorAvatarUrl(resolvedUser);
                 }
