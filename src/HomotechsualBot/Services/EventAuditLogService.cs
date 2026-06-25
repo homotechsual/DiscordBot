@@ -39,11 +39,6 @@ public class EventAuditLogService
             return Task.CompletedTask;
         }
 
-        if (IsIgnoredUser(message.Author.Id))
-        {
-            return Task.CompletedTask;
-        }
-
         _recentMessages[message.Id] = new MessageSnapshot(
             message.Author.Id,
             message.Content,
