@@ -214,11 +214,15 @@ public class EventAuditLogService
 
             var title = actor is null ? "👋 Member Left" : "🚪 Member Removed";
             var action = actor is null ? "Voluntary leave (or no matching audit log entry)" : actor.Action;
+            var authorDisplay = GetAuthorDisplay(user);
+            var avatarUrl = GetAuthorAvatarUrl(user) ?? GetDefaultAvatarUrl(user.Id);
 
             var embed = new EmbedBuilder()
                 .WithTitle(title)
                 .WithColor(actor is null ? new Color(0x95A5A6) : new Color(0xE74C3C))
-                .AddField("Member", $"<@{user.Id}> ({user.Id})", inline: true)
+                .WithAuthor(authorDisplay, iconUrl: avatarUrl)
+                .WithThumbnailUrl(avatarUrl)
+                .AddField("Member", $"{authorDisplay} ({user.Id})", inline: true)
                 .AddField("Action", action, inline: true)
                 .AddField("Actor", actor?.ActorDisplay ?? "Unknown", inline: true)
                 .WithTimestamp(DateTimeOffset.UtcNow);
@@ -256,10 +260,15 @@ public class EventAuditLogService
                 return;
             }
 
+            var authorDisplay = GetAuthorDisplay(user);
+            var avatarUrl = GetAuthorAvatarUrl(user) ?? GetDefaultAvatarUrl(user.Id);
+
             var embed = new EmbedBuilder()
                 .WithTitle("📥 Member Joined")
                 .WithColor(new Color(0x2ECC71))
-                .AddField("Member", $"<@{user.Id}> ({user.Id})", inline: true)
+                .WithAuthor(authorDisplay, iconUrl: avatarUrl)
+                .WithThumbnailUrl(avatarUrl)
+                .AddField("Member", $"{authorDisplay} ({user.Id})", inline: true)
                 .WithTimestamp(DateTimeOffset.UtcNow);
 
             await auditChannel.SendMessageAsync(embed: embed.Build());
