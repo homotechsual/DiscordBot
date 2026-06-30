@@ -266,7 +266,7 @@ public class EventAuditLogService
             var embed = new EmbedBuilder()
                 .WithTitle("📥 Member Joined")
                 .WithColor(new Color(0x2ECC71))
-                .WithAuthor(authorDisplay, iconUrl: avatarUrl)
+                .WithAuthor(authorDisplay, iconUrl: avatarUrl, url: $"https://discord.com/users/{user.Id}")
                 .WithThumbnailUrl(avatarUrl)
                 .AddField("Member", $"{authorDisplay} ({user.Id})", inline: true)
                 .WithTimestamp(DateTimeOffset.UtcNow);
