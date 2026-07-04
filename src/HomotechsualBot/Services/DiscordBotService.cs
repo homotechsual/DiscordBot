@@ -59,10 +59,10 @@ public class DiscordBotService
         _client.Disconnected += DisconnectedAsync;
         _client.InteractionCreated += HandleInteractionAsync;
         _client.GuildAvailable += GuildAvailableAsync;
-        _client.MessageReceived += _eventAuditLogService.HandleMessageReceivedAsync;
-        _client.MessageReceived += _singleMessageService.HandleMessageAsync;
-        _client.MessageReceived += _spamDetector.HandleMessageAsync;
-        _client.MessageReceived += _allCapsModerator.HandleMessageAsync;
+        _client.MessageReceived += message => RunMessageHandler(_eventAuditLogService.HandleMessageReceivedAsync, message, nameof(EventAuditLogService));
+        _client.MessageReceived += message => RunMessageHandler(_singleMessageService.HandleMessageAsync, message, nameof(SingleMessageService));
+        _client.MessageReceived += message => RunMessageHandler(_spamDetector.HandleMessageAsync, message, nameof(CrossChannelSpamDetector));
+        _client.MessageReceived += message => RunMessageHandler(_allCapsModerator.HandleMessageAsync, message, nameof(AllCapsMessageModerator));
         _client.MessageDeleted += _eventAuditLogService.HandleMessageDeletedAsync;
         _client.UserJoined += _eventAuditLogService.HandleUserJoinedAsync;
         _client.UserLeft += _eventAuditLogService.HandleUserLeftAsync;
@@ -70,6 +70,26 @@ public class DiscordBotService
         // Log interaction service events
         _interactionService.Log += LogAsync;
         _interactionService.SlashCommandExecuted += SlashCommandExecutedAsync;
+        _interactionService.ComponentCommandExecuted += ComponentCommandExecutedAsync;
+    }
+
+    // MessageReceived subscribers run sequentially and share one HandlerTimeout budget, so a slow
+    // handler (multiple Discord API calls for delete/DM/mod-log) can block the gateway's dispatch
+    // loop. Running each on its own background task keeps them independent of that shared budget.
+    private Task RunMessageHandler(Func<SocketMessage, Task> handler, SocketMessage message, string handlerName)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await handler(message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled exception in {Handler} MessageReceived handler", handlerName);
+            }
+        });
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -383,6 +403,26 @@ public class DiscordBotService
         else
         {
             _logger.LogInformation("Slash command {CommandName} executed successfully", command.Name);
+        }
+    }
+
+    /// <summary>
+    /// Called when a component (button/select menu) interaction is executed. Component command
+    /// results are not surfaced anywhere else — without this, a failing handler is caught
+    /// internally by ExecuteCommandAsync and silently discarded with no log and no user response.
+    /// </summary>
+    private async Task ComponentCommandExecutedAsync(ComponentCommandInfo command, IInteractionContext context, IResult result)
+    {
+        if (!result.IsSuccess)
+        {
+            _logger.LogError("Component command {CommandName} failed: {Error}", command.Name, result.ErrorReason);
+            var userMessage = BuildInteractionErrorMessage(result);
+            if (context.Interaction is SocketInteraction socketInteraction)
+                await SendInteractionErrorAsync(socketInteraction, userMessage);
+        }
+        else
+        {
+            _logger.LogInformation("Component command {CommandName} executed successfully", command.Name);
         }
     }
 
