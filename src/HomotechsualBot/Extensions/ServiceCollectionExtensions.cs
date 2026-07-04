@@ -87,6 +87,9 @@ public static class ServiceCollectionExtensions
         var spamConfig = configuration.GetSection("CrossChannelSpam").Get<CrossChannelSpamConfig>() ?? new CrossChannelSpamConfig();
         services.AddSingleton(spamConfig);
 
+        var allCapsConfig = configuration.GetSection("AllCapsModeration").Get<AllCapsModerationConfig>() ?? new AllCapsModerationConfig();
+        services.AddSingleton(allCapsConfig);
+
         var moderationExemptionsConfig = configuration.GetSection("ModerationExemptions").Get<ModerationExemptionsConfig>() ?? new ModerationExemptionsConfig();
         services.AddSingleton(moderationExemptionsConfig);
 
@@ -133,7 +136,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ModerationExemptionService>();
         services.AddSingleton<SingleMessageService>();
         services.AddSingleton<ModerationLogService>();
+        services.AddSingleton<WarningService>();
         services.AddSingleton<CrossChannelSpamDetector>();
+        services.AddSingleton<AllCapsMessageModerator>();
         services.AddSingleton<DiscordBot.Modules.Moderations.MoveMessagesModule>();
         services.AddSingleton<EventAuditLogService>();
         services.AddHttpClient<HeartbeatMonitorService>();

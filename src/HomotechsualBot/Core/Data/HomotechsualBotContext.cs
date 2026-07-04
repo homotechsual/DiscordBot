@@ -14,6 +14,8 @@ public class HomotechsualBotContext : DbContext
     public DbSet<YoutubeTrackedChannel> YoutubeTrackedChannels => Set<YoutubeTrackedChannel>();
     public DbSet<SingleMessageChannelState> SingleMessageChannelStates => Set<SingleMessageChannelState>();
     public DbSet<SingleMessageRecord> SingleMessageRecords => Set<SingleMessageRecord>();
+    public DbSet<UserWarning> UserWarnings => Set<UserWarning>();
+    public DbSet<ModLogThreadLink> ModLogThreadLinks => Set<ModLogThreadLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -68,6 +70,21 @@ public class HomotechsualBotContext : DbContext
                 .HasForeignKey(x => x.ChannelId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(x => x.PostedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+        });
+
+        modelBuilder.Entity<UserWarning>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.GuildId, x.UserId });
+            entity.Property(x => x.Reason).IsRequired();
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+        });
+
+        modelBuilder.Entity<ModLogThreadLink>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.GuildId, x.UserId }).IsUnique();
+            entity.Property(x => x.LastUsedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
         });
     }
 }

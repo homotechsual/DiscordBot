@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Interactions;
@@ -12,10 +11,12 @@ namespace DiscordBot.Modules.Moderations;
 public class WarnModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly ModerationLogService _logService;
+    private readonly WarningService _warningService;
 
-    public WarnModule(ModerationLogService logService)
+    public WarnModule(ModerationLogService logService, WarningService warningService)
     {
         _logService = logService;
+        _warningService = warningService;
     }
 
     [SlashCommand("warn", "Warn a member")]
@@ -31,32 +32,23 @@ public class WarnModule : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
-        // Save warning
-        if (!WarnStorage.Warnings.ContainsKey(user.Id))
-            WarnStorage.Warnings[user.Id] = new List<string>();
-
-        WarnStorage.Warnings[user.Id].Add(reason);
         await _logService.LogActionAsync(ModerationLogEntry.Create(
             ModerationActionType.Warn, user, Context.User, reason));
 
-        var warnCount = WarnStorage.Warnings[user.Id].Count;
+        var result = await _warningService.AddWarningAsync(
+            Context.Guild.Id, user.Id, reason, WarningSource.Manual, Context.User.Id, user);
 
-        // Check warning count
-        if (warnCount >= 3)
+        if (result.Kicked)
         {
-            try
-            {
-                await user.KickAsync($"Over 3 warnings (total: {warnCount})");
-                await RespondAsync($"⚠️ {user.Username} has been kicked for having {warnCount} warnings!");
-            }
-            catch (Exception ex)
-            {
-                await RespondAsync($"❌ Kick failed: {ex.Message}", ephemeral: true);
-            }
+            await RespondAsync($"⚠️ {user.Username} has been kicked for having {result.WarningCount} warnings!");
+        }
+        else if (result.KickFailureReason is not null)
+        {
+            await RespondAsync($"❌ Kick failed: {result.KickFailureReason}", ephemeral: true);
         }
         else
         {
-            await RespondAsync($"⚠️ {user.Username} has been warned ({warnCount}/3). Reason: {reason}");
+            await RespondAsync($"⚠️ {user.Username} has been warned ({result.WarningCount}/3). Reason: {reason}");
         }
     }
 }
