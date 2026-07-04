@@ -119,7 +119,7 @@ public class WarningsModule : InteractionModuleBase<SocketInteractionContext>
         await RespondAsync(embed: embedBuilder.Build(), components: components, ephemeral: true);
     }
 
-    [ComponentInteraction("warn_clear_select:*:*")]
+    [ComponentInteraction("warn_clear_select:*:*", ignoreGroupNames: true)]
     public async Task ClearSelectAsync(string userId, string guildId)
     {
         if (Context.User is not SocketGuildUser actor || !actor.GuildPermissions.KickMembers)
@@ -159,7 +159,7 @@ public class WarningsModule : InteractionModuleBase<SocketInteractionContext>
         }
     }
 
-    [ComponentInteraction("warn_clear_all:*:*")]
+    [ComponentInteraction("warn_clear_all:*:*", ignoreGroupNames: true)]
     public async Task ClearAllAsync(string userId, string guildId)
     {
         if (Context.User is not SocketGuildUser actor || !actor.GuildPermissions.KickMembers)

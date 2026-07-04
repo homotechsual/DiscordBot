@@ -391,18 +391,19 @@ public class DiscordBotService
     /// Called when a slash command is executed. This is the correct place to handle precondition
     /// failures because ExecuteCommandAsync returns success on dispatch even when preconditions fail.
     /// </summary>
-    private async Task SlashCommandExecutedAsync(SlashCommandInfo command, IInteractionContext context, IResult result)
+    private async Task SlashCommandExecutedAsync(SlashCommandInfo? command, IInteractionContext context, IResult result)
     {
         if (!result.IsSuccess)
         {
-            _logger.LogError("Slash command {CommandName} failed: {Error}", command.Name, result.ErrorReason);
+            // command is null when the interaction didn't match any registered command.
+            _logger.LogError("Slash command {CommandName} failed: {Error}", command?.Name ?? "(unknown)", result.ErrorReason);
             var userMessage = BuildInteractionErrorMessage(result);
             if (context.Interaction is SocketInteraction socketInteraction)
                 await SendInteractionErrorAsync(socketInteraction, userMessage);
         }
         else
         {
-            _logger.LogInformation("Slash command {CommandName} executed successfully", command.Name);
+            _logger.LogInformation("Slash command {CommandName} executed successfully", command?.Name ?? "(unknown)");
         }
     }
 
@@ -411,18 +412,19 @@ public class DiscordBotService
     /// results are not surfaced anywhere else — without this, a failing handler is caught
     /// internally by ExecuteCommandAsync and silently discarded with no log and no user response.
     /// </summary>
-    private async Task ComponentCommandExecutedAsync(ComponentCommandInfo command, IInteractionContext context, IResult result)
+    private async Task ComponentCommandExecutedAsync(ComponentCommandInfo? command, IInteractionContext context, IResult result)
     {
         if (!result.IsSuccess)
         {
-            _logger.LogError("Component command {CommandName} failed: {Error}", command.Name, result.ErrorReason);
+            // command is null when the custom ID didn't match any registered component command.
+            _logger.LogError("Component command {CommandName} failed: {Error}", command?.Name ?? "(unknown)", result.ErrorReason);
             var userMessage = BuildInteractionErrorMessage(result);
             if (context.Interaction is SocketInteraction socketInteraction)
                 await SendInteractionErrorAsync(socketInteraction, userMessage);
         }
         else
         {
-            _logger.LogInformation("Component command {CommandName} executed successfully", command.Name);
+            _logger.LogInformation("Component command {CommandName} executed successfully", command?.Name ?? "(unknown)");
         }
     }
 
