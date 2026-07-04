@@ -159,6 +159,11 @@ jobs:
         'HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=${{ secrets.CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT || '3' }}' \
           'HOMOTECHSUALBOT_CrossChannelSpam__DeleteMessages=${{ secrets.CROSS_CHANNEL_SPAM_DELETE_MESSAGES || 'true' }}' \
           'HOMOTECHSUALBOT_CrossChannelSpam__TimeoutOnDetection=${{ secrets.CROSS_CHANNEL_SPAM_TIMEOUT_ON_DETECTION || 'true' }}' \
+        'HOMOTECHSUALBOT_AllCapsModeration__Enabled=${{ secrets.ALL_CAPS_MODERATION_ENABLED || 'true' }}' \
+        'HOMOTECHSUALBOT_AllCapsModeration__DeleteMessage=${{ secrets.ALL_CAPS_MODERATION_DELETE_MESSAGE || 'true' }}' \
+        'HOMOTECHSUALBOT_AllCapsModeration__MinLetters=${{ secrets.ALL_CAPS_MODERATION_MIN_LETTERS || '8' }}' \
+        'HOMOTECHSUALBOT_AllCapsModeration__MinUppercaseRatio=${{ secrets.ALL_CAPS_MODERATION_MIN_UPPERCASE_RATIO || '0.7' }}' \
+        'HOMOTECHSUALBOT_AllCapsModeration__WarningDurationSeconds=${{ secrets.ALL_CAPS_MODERATION_WARNING_DURATION_SECONDS || '10' }}' \
         'HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0=${{ secrets.MODERATION_EXEMPT_USER_ID_0 || '' }}' \
         'HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0=${{ secrets.MODERATION_EXEMPT_ROLE_ID_0 || '' }}' \
         'HOMOTECHSUALBOT_CommandAccess__DisableAllFunCommands=${{ secrets.COMMAND_ACCESS_DISABLE_ALL_FUN_COMMANDS || 'false' }}' \

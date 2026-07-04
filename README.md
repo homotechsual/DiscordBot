@@ -155,6 +155,13 @@ All settings live under the `Bot` key in `appsettings.json`:
     "MinimumChannelCount": 3,
     "DeleteMessages": true,
     "TimeoutOnDetection": true
+  },
+  "AllCapsModeration": {
+    "Enabled": true,
+    "DeleteMessage": true,
+    "MinLetters": 8,
+    "MinUppercaseRatio": 0.7,
+    "WarningDurationSeconds": 10
   }
 }
 ```
@@ -235,6 +242,8 @@ All moderation actions are logged as rich embeds to a Discord forum channel. Eac
 
 > **Note:** `ModerationLog` is a root-level config section, not nested under `Bot`.
 
+The bot reuses one forum thread per user instead of creating a new thread for every action: it first checks for a previously linked thread, then falls back to scanning existing thread titles for an exact `[userId]` tag or a fuzzy username match (auto-renaming and posting a confirmation note if linked this way) before creating a new thread as a last resort.
+
 | Setting | Description |
 | --- | --- |
 | `ForumChannelId` | Forum channel ID where moderation log threads are created (`0` = disabled) |
@@ -253,6 +262,20 @@ Detects users who send identical messages across multiple channels within a shor
 | `MinimumChannelCount` | Minimum number of distinct channels before a detection fires (default: `3`) |
 | `DeleteMessages` | Delete detected spam messages (requires Manage Messages). Default: `true` |
 | `TimeoutOnDetection` | Apply a 28-day timeout to the spammer (requires Moderate Members). Default: `true` |
+
+### All-Caps Auto-Moderation
+
+Detects messages that are mostly uppercase, deletes them, warns the author via a self-deleting channel message and a DM, records a strike toward the same 3-strike `/warn` counter, and logs the incident to the user's moderation log thread.
+
+> **Note:** `AllCapsModeration` is a root-level config section, not nested under `Bot`.
+
+| Setting | Description |
+| --- | --- |
+| `Enabled` | Enable all-caps detection (default: `true`) |
+| `DeleteMessage` | Delete the offending message (requires Manage Messages). Default: `true` |
+| `MinLetters` | Minimum letter count (non-letters excluded) before a message is considered (default: `8`) |
+| `MinUppercaseRatio` | Fraction of letters that must be uppercase to trigger (default: `0.7`) |
+| `WarningDurationSeconds` | How long the self-deleting channel warning stays visible (default: `10`) |
 
 ### Uptime Heartbeat
 
@@ -298,6 +321,11 @@ HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=30
 HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=3
 HOMOTECHSUALBOT_CrossChannelSpam__DeleteMessages=true
 HOMOTECHSUALBOT_CrossChannelSpam__TimeoutOnDetection=true
+HOMOTECHSUALBOT_AllCapsModeration__Enabled=true
+HOMOTECHSUALBOT_AllCapsModeration__DeleteMessage=true
+HOMOTECHSUALBOT_AllCapsModeration__MinLetters=8
+HOMOTECHSUALBOT_AllCapsModeration__MinUppercaseRatio=0.7
+HOMOTECHSUALBOT_AllCapsModeration__WarningDurationSeconds=10
 ```
 
 #### Moderation Exemptions Configuration
@@ -379,6 +407,11 @@ If you deploy with `.github/workflows/deploy.yml`, configure these repository se
 | `CROSS_CHANNEL_SPAM_MINIMUM_CHANNEL_COUNT` | `HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount` |
 | `CROSS_CHANNEL_SPAM_DELETE_MESSAGES` | `HOMOTECHSUALBOT_CrossChannelSpam__DeleteMessages` |
 | `CROSS_CHANNEL_SPAM_TIMEOUT_ON_DETECTION` | `HOMOTECHSUALBOT_CrossChannelSpam__TimeoutOnDetection` |
+| `ALL_CAPS_MODERATION_ENABLED` | `HOMOTECHSUALBOT_AllCapsModeration__Enabled` |
+| `ALL_CAPS_MODERATION_DELETE_MESSAGE` | `HOMOTECHSUALBOT_AllCapsModeration__DeleteMessage` |
+| `ALL_CAPS_MODERATION_MIN_LETTERS` | `HOMOTECHSUALBOT_AllCapsModeration__MinLetters` |
+| `ALL_CAPS_MODERATION_MIN_UPPERCASE_RATIO` | `HOMOTECHSUALBOT_AllCapsModeration__MinUppercaseRatio` |
+| `ALL_CAPS_MODERATION_WARNING_DURATION_SECONDS` | `HOMOTECHSUALBOT_AllCapsModeration__WarningDurationSeconds` |
 | `MODERATION_EXEMPT_USER_ID_0` | `HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0` |
 | `MODERATION_EXEMPT_ROLE_ID_0` | `HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0` |
 | `COMMAND_ACCESS_DISABLE_ALL_FUN_COMMANDS` | `HOMOTECHSUALBOT_CommandAccess__DisableAllFunCommands` |
