@@ -4,6 +4,7 @@ using DiscordBot.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 
 namespace DiscordBot.Services;
 
@@ -59,6 +60,34 @@ public class WarningService
             _logger.LogWarning(ex, "WarningService: failed to kick user {UserId} after {Count} warnings", userId, warningCount);
             return new WarningResult(warningCount, false, ex.Message);
         }
+    }
+
+    public async Task<int> ClearWarningsAsync(ulong guildId, ulong userId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+
+        var toRemove = await db.UserWarnings
+            .Where(w => w.GuildId == guildId && w.UserId == userId)
+            .ToListAsync();
+
+        db.UserWarnings.RemoveRange(toRemove);
+        await db.SaveChangesAsync();
+        return toRemove.Count;
+    }
+
+    public async Task<int> RemoveWarningsAsync(ulong guildId, ulong userId, IReadOnlyList<int> warningIds)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+
+        var toRemove = await db.UserWarnings
+            .Where(w => w.GuildId == guildId && w.UserId == userId && warningIds.Contains(w.Id))
+            .ToListAsync();
+
+        db.UserWarnings.RemoveRange(toRemove);
+        await db.SaveChangesAsync();
+        return toRemove.Count;
     }
 }
 

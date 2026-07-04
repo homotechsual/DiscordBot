@@ -4,6 +4,7 @@ using DiscordBot.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Linq;
 using Xunit;
 
 namespace HomotechsualBot.Tests.Services;
@@ -97,5 +98,97 @@ public sealed class WarningServiceTests : IAsyncDisposable
         Assert.Equal(WarningSource.AutoAllCaps, stored.Source);
         Assert.Null(stored.ModeratorId);
         Assert.Equal("all-caps message", stored.Reason);
+    }
+
+    [Fact]
+    public async Task ClearWarningsAsync_RemovesAllWarningsForGuildAndUser()
+    {
+        var service = BuildService();
+        await service.AddWarningAsync(1UL, 100UL, "r1", WarningSource.Manual, 999UL, null);
+        await service.AddWarningAsync(1UL, 100UL, "r2", WarningSource.Manual, 999UL, null);
+
+        var removedCount = await service.ClearWarningsAsync(1UL, 100UL);
+
+        Assert.Equal(2, removedCount);
+        Assert.Equal(0, await CountWarningsAsync(1UL, 100UL));
+    }
+
+    [Fact]
+    public async Task ClearWarningsAsync_DoesNotTouchOtherGuildsOrUsers()
+    {
+        var service = BuildService();
+        await service.AddWarningAsync(1UL, 100UL, "r1", WarningSource.Manual, 999UL, null);
+        await service.AddWarningAsync(2UL, 100UL, "r2", WarningSource.Manual, 999UL, null);
+        await service.AddWarningAsync(1UL, 200UL, "r3", WarningSource.Manual, 999UL, null);
+
+        var removedCount = await service.ClearWarningsAsync(1UL, 100UL);
+
+        Assert.Equal(1, removedCount);
+        Assert.Equal(1, await CountWarningsAsync(2UL, 100UL));
+        Assert.Equal(1, await CountWarningsAsync(1UL, 200UL));
+    }
+
+    [Fact]
+    public async Task ClearWarningsAsync_NoWarnings_ReturnsZero()
+    {
+        var service = BuildService();
+
+        var removedCount = await service.ClearWarningsAsync(1UL, 100UL);
+
+        Assert.Equal(0, removedCount);
+    }
+
+    [Fact]
+    public async Task RemoveWarningsAsync_RemovesOnlySpecifiedIds()
+    {
+        var service = BuildService();
+        await service.AddWarningAsync(1UL, 100UL, "r1", WarningSource.Manual, 999UL, null);
+        await service.AddWarningAsync(1UL, 100UL, "r2", WarningSource.Manual, 999UL, null);
+        await service.AddWarningAsync(1UL, 100UL, "r3", WarningSource.Manual, 999UL, null);
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+        var ids = await db.UserWarnings
+            .Where(w => w.GuildId == 1UL && w.UserId == 100UL)
+            .OrderBy(w => w.Id)
+            .Select(w => w.Id)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        var removedCount = await service.RemoveWarningsAsync(1UL, 100UL, [ids[0], ids[2]]);
+
+        Assert.Equal(2, removedCount);
+        Assert.Equal(1, await CountWarningsAsync(1UL, 100UL));
+    }
+
+    [Fact]
+    public async Task RemoveWarningsAsync_IgnoresIdsBelongingToAnotherUser()
+    {
+        var service = BuildService();
+        await service.AddWarningAsync(1UL, 100UL, "mine", WarningSource.Manual, 999UL, null);
+        await service.AddWarningAsync(1UL, 200UL, "not mine", WarningSource.Manual, 999UL, null);
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HomotechsualBotContext>();
+        var otherUsersWarningId = await db.UserWarnings
+            .Where(w => w.UserId == 200UL)
+            .Select(w => w.Id)
+            .SingleAsync(TestContext.Current.CancellationToken);
+
+        var removedCount = await service.RemoveWarningsAsync(1UL, 100UL, [otherUsersWarningId]);
+
+        Assert.Equal(0, removedCount);
+        Assert.Equal(1, await CountWarningsAsync(1UL, 200UL));
+    }
+
+    [Fact]
+    public async Task RemoveWarningsAsync_IdThatNoLongerExists_ReturnsZeroForThatId()
+    {
+        var service = BuildService();
+        await service.AddWarningAsync(1UL, 100UL, "r1", WarningSource.Manual, 999UL, null);
+
+        var removedCount = await service.RemoveWarningsAsync(1UL, 100UL, [99999]);
+
+        Assert.Equal(0, removedCount);
+        Assert.Equal(1, await CountWarningsAsync(1UL, 100UL));
     }
 }
