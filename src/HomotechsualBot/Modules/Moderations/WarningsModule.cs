@@ -38,7 +38,7 @@ public class WarningsModule : InteractionModuleBase<SocketInteractionContext>
 
         var warnings = await db.UserWarnings
             .Where(w => w.GuildId == Context.Guild.Id && w.UserId == user.Id)
-            .OrderBy(w => w.CreatedAt)
+            .OrderBy(w => w.Id)
             .ToListAsync();
 
         if (warnings.Count == 0)

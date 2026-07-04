@@ -197,7 +197,7 @@ public class ModerationLogService
         }
 
         var active = await forum.GetActiveThreadsAsync();
-        var archived = await forum.GetPublicArchivedThreadsAsync(limit: 200);
+        var archived = await forum.GetPublicArchivedThreadsAsync(limit: 100);
         var byId = active.Concat(archived).ToDictionary(t => t.Id);
         var candidates = byId.Values.Select(t => new ThreadCandidate(t.Id, t.Name, t.CreatedAt));
 
