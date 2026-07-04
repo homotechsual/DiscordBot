@@ -23,4 +23,10 @@ public record ModerationLogEntry(
         IUser moderator,
         string? reason = null) =>
         new(actionType, null, targetId, moderator, reason, DateTimeOffset.UtcNow);
+
+    public static ModerationLogEntry CreateAutomated(
+        ModerationActionType actionType,
+        IUser target,
+        string? reason = null) =>
+        new(actionType, target, target.Id, null, reason, DateTimeOffset.UtcNow);
 }

@@ -8,6 +8,7 @@ public enum ModerationActionType
     Mute,
     Unmute,
     Warn,
+    AutoWarnAllCaps,
     PurgeUser,
     ClearMessages,
     MoveMessages,
