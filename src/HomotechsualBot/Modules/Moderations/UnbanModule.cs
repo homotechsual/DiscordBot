@@ -22,16 +22,22 @@ public class UnbanModule : InteractionModuleBase<SocketInteractionContext>
     [RequireUserPermission(GuildPermission.BanMembers)]
     [RequireBotPermission(GuildPermission.BanMembers)]
     public async Task UnbanAsync(
-        [Summary(description: "ID of user to unban")] ulong userId,
+        [Summary(description: "ID or mention of user to unban")] string userId,
         [Summary(description: "Reason (optional)")] string? reason = null)
     {
         try
         {
             var guild = Context.Guild;
 
+            if (!TryParseUserId(userId, out var parsedUserId))
+            {
+                await RespondAsync("❌ Invalid user ID. Use a numeric Discord user ID.", ephemeral: true);
+                return;
+            }
+
             // Get ban list
             var bans = await guild.GetBansAsync().FlattenAsync();
-            var bannedUser = bans.FirstOrDefault(b => b.User.Id == userId)?.User;
+            var bannedUser = bans.FirstOrDefault(b => b.User.Id == parsedUserId)?.User;
 
             if (bannedUser == null)
             {
@@ -55,5 +61,18 @@ public class UnbanModule : InteractionModuleBase<SocketInteractionContext>
         {
             await RespondAsync($"❌ Unban failed: {ex.Message}", ephemeral: true);
         }
+    }
+
+    private static bool TryParseUserId(string rawUserId, out ulong userId)
+    {
+        var trimmed = rawUserId.Trim();
+
+        // Support plain IDs and mention formats like <@123> or <@!123>.
+        if (trimmed.StartsWith("<@") && trimmed.EndsWith(">"))
+        {
+            trimmed = trimmed.TrimStart('<', '@', '!').TrimEnd('>');
+        }
+
+        return ulong.TryParse(trimmed, out userId);
     }
 }
