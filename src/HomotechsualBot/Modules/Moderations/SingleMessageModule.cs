@@ -42,9 +42,11 @@ public class SingleMessageModule : InteractionModuleBase<SocketInteractionContex
         [Summary("user", "User to reset")] SocketGuildUser user,
         [Summary("channel", "Channel to reset in (defaults to current)")] SocketTextChannel? channel = null)
     {
+        await DeferAsync(ephemeral: true);
+
         var target = channel ?? (SocketTextChannel)Context.Channel;
         var result = await _service.ResetUserAsync(target.Id, user.Id, user.Mention);
-        await RespondAsync(result, ephemeral: true);
+        await FollowupAsync(result, ephemeral: true);
     }
 
     [SlashCommand("list", "List users who have posted in a single-message channel")]

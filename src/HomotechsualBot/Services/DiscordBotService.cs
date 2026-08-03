@@ -481,9 +481,22 @@ public class DiscordBotService
         try
         {
             if (interaction.HasResponded)
+            {
                 await interaction.FollowupAsync(message, ephemeral: true);
-            else
-                await interaction.RespondAsync(message, ephemeral: true);
+                return;
+            }
+
+            var age = DateTimeOffset.UtcNow - interaction.CreatedAt;
+            if (age >= TimeSpan.FromSeconds(3))
+            {
+                _logger.LogWarning(
+                    "Skipping initial interaction error response for interaction {InteractionId} because it is already {AgeMs}ms old.",
+                    interaction.Id,
+                    (int)age.TotalMilliseconds);
+                return;
+            }
+
+            await interaction.RespondAsync(message, ephemeral: true);
         }
         catch (Exception ex)
         {
