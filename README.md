@@ -274,8 +274,14 @@ Detects messages that are mostly uppercase, deletes them, warns the author via a
 | `Enabled` | Enable all-caps detection (default: `true`) |
 | `DeleteMessage` | Delete the offending message (requires Manage Messages). Default: `true` |
 | `MinLetters` | Minimum letter count (non-letters excluded) before a message is considered (default: `8`) |
-| `MinUppercaseRatio` | Fraction of letters that must be uppercase to trigger (default: `0.7`) |
+| `MinUppercaseRatio` | Starting uppercase ratio threshold at `MinLetters` (default: `0.8`) |
+| `EnableLengthScaling` | When `true`, required uppercase ratio decreases as message length grows (default: `true`) |
+| `UppercaseRatioDropPerLetter` | Ratio subtracted per letter above `MinLetters` while scaling (default: `0.01`) |
+| `MinScaledUppercaseRatio` | Floor ratio used for very long messages (default: `0.4`) |
 | `WarningDurationSeconds` | How long the self-deleting channel warning stays visible (default: `10`) |
+
+The bot now uses a DB-backed acronym allowlist to exempt known acronyms instead of a blanket short-message exemption. Manage entries with `/acronyms add`, `/acronyms remove`, and `/acronyms list`.
+The default seed includes common English chat acronyms, Welsh/Wales community acronyms, and common IT/technical acronyms.
 
 ### Uptime Heartbeat
 
@@ -324,7 +330,10 @@ HOMOTECHSUALBOT_CrossChannelSpam__TimeoutOnDetection=true
 HOMOTECHSUALBOT_AllCapsModeration__Enabled=true
 HOMOTECHSUALBOT_AllCapsModeration__DeleteMessage=true
 HOMOTECHSUALBOT_AllCapsModeration__MinLetters=8
-HOMOTECHSUALBOT_AllCapsModeration__MinUppercaseRatio=0.7
+HOMOTECHSUALBOT_AllCapsModeration__MinUppercaseRatio=0.8
+HOMOTECHSUALBOT_AllCapsModeration__EnableLengthScaling=true
+HOMOTECHSUALBOT_AllCapsModeration__UppercaseRatioDropPerLetter=0.01
+HOMOTECHSUALBOT_AllCapsModeration__MinScaledUppercaseRatio=0.4
 HOMOTECHSUALBOT_AllCapsModeration__WarningDurationSeconds=10
 ```
 
@@ -411,6 +420,9 @@ If you deploy with `.github/workflows/deploy.yml`, configure these repository se
 | `ALL_CAPS_MODERATION_DELETE_MESSAGE` | `HOMOTECHSUALBOT_AllCapsModeration__DeleteMessage` |
 | `ALL_CAPS_MODERATION_MIN_LETTERS` | `HOMOTECHSUALBOT_AllCapsModeration__MinLetters` |
 | `ALL_CAPS_MODERATION_MIN_UPPERCASE_RATIO` | `HOMOTECHSUALBOT_AllCapsModeration__MinUppercaseRatio` |
+| `ALL_CAPS_MODERATION_ENABLE_LENGTH_SCALING` | `HOMOTECHSUALBOT_AllCapsModeration__EnableLengthScaling` |
+| `ALL_CAPS_MODERATION_UPPERCASE_RATIO_DROP_PER_LETTER` | `HOMOTECHSUALBOT_AllCapsModeration__UppercaseRatioDropPerLetter` |
+| `ALL_CAPS_MODERATION_MIN_SCALED_UPPERCASE_RATIO` | `HOMOTECHSUALBOT_AllCapsModeration__MinScaledUppercaseRatio` |
 | `ALL_CAPS_MODERATION_WARNING_DURATION_SECONDS` | `HOMOTECHSUALBOT_AllCapsModeration__WarningDurationSeconds` |
 | `MODERATION_EXEMPT_USER_ID_0` | `HOMOTECHSUALBOT_ModerationExemptions__ExemptUserIds__0` |
 | `MODERATION_EXEMPT_ROLE_ID_0` | `HOMOTECHSUALBOT_ModerationExemptions__ExemptRoleIds__0` |

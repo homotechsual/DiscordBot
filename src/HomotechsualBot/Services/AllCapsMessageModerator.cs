@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Discord;
 using Discord.WebSocket;
 using DiscordBot.Models;
+using DiscordBot.Core.Data;
 using Microsoft.Extensions.Logging;
 
 namespace DiscordBot.Services;
@@ -11,6 +12,7 @@ public sealed partial class AllCapsMessageModerator
     private const string WarningText = "please avoid typing in all caps.";
 
     private readonly AllCapsModerationConfig _config;
+    private readonly AcronymAllowlistService _acronymAllowlistService;
     private readonly ModerationExemptionService _exemptionService;
     private readonly ModerationLogService _logService;
     private readonly WarningService _warningService;
@@ -18,12 +20,14 @@ public sealed partial class AllCapsMessageModerator
 
     public AllCapsMessageModerator(
         AllCapsModerationConfig config,
+        AcronymAllowlistService acronymAllowlistService,
         ModerationExemptionService exemptionService,
         ModerationLogService logService,
         WarningService warningService,
         ILogger<AllCapsMessageModerator> logger)
     {
         _config = config;
+        _acronymAllowlistService = acronymAllowlistService;
         _exemptionService = exemptionService;
         _logService = logService;
         _warningService = warningService;
@@ -41,7 +45,9 @@ public sealed partial class AllCapsMessageModerator
         var guildUser = channel.Guild.GetUser(message.Author.Id);
         if (_exemptionService.IsExempt(guildUser)) return;
 
-        var evaluation = Evaluate(message.Content ?? string.Empty, _config.MinLetters, _config.MinUppercaseRatio);
+        if (await _acronymAllowlistService.IsAllowlistedMessageAsync(message.Content ?? string.Empty)) return;
+
+        var evaluation = Evaluate(message.Content ?? string.Empty, _config);
         if (!evaluation.ShouldTrigger) return;
 
         if (_config.DeleteMessage)
@@ -111,7 +117,7 @@ public sealed partial class AllCapsMessageModerator
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];
 
-    public static AllCapsEvaluation Evaluate(string content, int minLetters, double minUppercaseRatio)
+    public static AllCapsEvaluation Evaluate(string content, AllCapsModerationConfig config)
     {
         var stripped = CodeBlockPattern().Replace(content, " ");
         stripped = UrlPattern().Replace(stripped, " ");
@@ -127,10 +133,32 @@ public sealed partial class AllCapsMessageModerator
             if (char.IsUpper(c)) uppercaseCount++;
         }
 
-        var shouldTrigger = letterCount >= minLetters &&
-            uppercaseCount / (double)letterCount >= minUppercaseRatio;
+        var uppercaseRatio = letterCount == 0 ? 0 : uppercaseCount / (double)letterCount;
+        var shouldTrigger = letterCount >= config.MinLetters &&
+            uppercaseRatio >= CalculateRequiredRatio(letterCount, config);
 
         return new AllCapsEvaluation(shouldTrigger, letterCount, uppercaseCount);
+    }
+
+    public static AllCapsEvaluation Evaluate(string content, int minLetters, double minUppercaseRatio) =>
+        Evaluate(content, new AllCapsModerationConfig
+        {
+            MinLetters = minLetters,
+            MinUppercaseRatio = minUppercaseRatio,
+            EnableLengthScaling = false
+        });
+
+    private static double CalculateRequiredRatio(int letterCount, AllCapsModerationConfig config)
+    {
+        var startRatio = Math.Clamp(config.MinUppercaseRatio, 0, 1);
+        if (!config.EnableLengthScaling) return startRatio;
+
+        var floorRatio = Math.Clamp(config.MinScaledUppercaseRatio, 0, startRatio);
+        var dropPerLetter = Math.Max(0, config.UppercaseRatioDropPerLetter);
+        var extraLetters = Math.Max(0, letterCount - config.MinLetters);
+        var scaledRatio = startRatio - extraLetters * dropPerLetter;
+
+        return Math.Clamp(scaledRatio, floorRatio, startRatio);
     }
 
     [GeneratedRegex(@"```[\s\S]*?```|`[^`]*`")]

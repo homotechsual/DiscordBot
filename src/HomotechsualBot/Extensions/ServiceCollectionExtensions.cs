@@ -134,11 +134,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DiscordBotService>();
         services.AddSingleton<CommandAccessService>();
         services.AddSingleton<ModerationExemptionService>();
+        services.AddSingleton<AcronymAllowlistService>();
         services.AddSingleton<SingleMessageService>();
         services.AddSingleton<ModerationLogService>();
         services.AddSingleton<WarningService>();
         services.AddSingleton<CrossChannelSpamDetector>();
         services.AddSingleton<AllCapsMessageModerator>();
+        services.AddSingleton<DiscordBot.Modules.Moderations.AcronymAllowlistModule>();
         services.AddSingleton<DiscordBot.Modules.Moderations.MoveMessagesModule>();
         services.AddSingleton<EventAuditLogService>();
         services.AddHttpClient<HeartbeatMonitorService>();
