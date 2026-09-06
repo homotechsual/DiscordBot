@@ -239,12 +239,30 @@ Set `GitHubMonitor:Enabled` to `true` to register the background poller, then ma
 
 Each entry in `Repositories` supports `Owner`, `Name`, `ChannelId`, and per-category `Issues`, `PullRequests`, `Actions`, `Releases` toggles plus `IssuesChannelId`, `PullRequestsChannelId`, `ActionsChannelId`, and `ReleasesChannelId` overrides.
 
+#### GitHub Token Permissions
+
+The monitor can read public repositories without a token, but an unauthenticated GitHub API client is limited to 60 requests per hour. Set `GitHubMonitor:Token` to a fine-grained personal access token for higher rate limits or private repositories.
+
+For a fine-grained token, select only the repositories being monitored and grant these **repository permissions** as **Read-only**:
+
+| Permission | Required for |
+| --- | --- |
+| `Metadata` | Repository API access; GitHub requires this permission for fine-grained repository tokens |
+| `Issues` | Issues notifications |
+| `Pull requests` | Pull request notifications |
+| `Actions` | Workflow run/build notifications |
+| `Contents` | Release notifications |
+
+For public repositories, `Issues`, `Pull requests`, `Actions`, and `Contents` are only needed if the token is used for private repositories or you want authenticated API rate limits. Do not grant `Administration`, `Workflows`, write permissions, or organization permissions. A classic token should use the `repo` scope only when private repository access is required; fine-grained tokens are preferred.
+
 Environment variables use the standard prefix, for example:
 
 ```bash
 HOMOTECHSUALBOT_Bot__GitHubMonitor__Enabled=true
 HOMOTECHSUALBOT_Bot__GitHubMonitor__DefaultChannelId=1234567890123456789
-HOMOTECHSUALBOT_Bot__GitHubMonitor__Token=ghp_xxx
+HOMOTECHSUALBOT_Bot__GitHubMonitor__RoleId=1234567890123456789
+HOMOTECHSUALBOT_Bot__GitHubMonitor__Token=github_pat_xxx
+HOMOTECHSUALBOT_Bot__GitHubMonitor__PollIntervalMinutes=10
 HOMOTECHSUALBOT_Bot__GitHubMonitor__Repositories__0__Owner=homotechsual
 HOMOTECHSUALBOT_Bot__GitHubMonitor__Repositories__0__Name=DiscordBot
 HOMOTECHSUALBOT_Bot__GitHubMonitor__Repositories__0__Actions=true
@@ -452,6 +470,11 @@ If you deploy with `.github/workflows/deploy.yml`, configure these repository se
 | `YOUTUBE_POLL_INTERVAL_MINUTES` | `HOMOTECHSUALBOT_Bot__YoutubeMonitor__PollIntervalMinutes` |
 | `YOUTUBE_DEFAULT_POST_TITLE_TEMPLATE` | `HOMOTECHSUALBOT_Bot__YoutubeMonitor__DefaultPostTitleTemplate` |
 | `YOUTUBE_DEFAULT_POST_BODY_TEMPLATE` | `HOMOTECHSUALBOT_Bot__YoutubeMonitor__DefaultPostBodyTemplate` |
+| `GH_MONITOR_ENABLED` | `HOMOTECHSUALBOT_Bot__GitHubMonitor__Enabled` |
+| `GH_DEFAULT_CHANNEL_ID` | `HOMOTECHSUALBOT_Bot__GitHubMonitor__DefaultChannelId` |
+| `GH_MONITOR_ROLE_ID` | `HOMOTECHSUALBOT_Bot__GitHubMonitor__RoleId` |
+| `GH_MONITOR_TOKEN` | `HOMOTECHSUALBOT_Bot__GitHubMonitor__Token` |
+| `GH_POLL_INTERVAL_MINUTES` | `HOMOTECHSUALBOT_Bot__GitHubMonitor__PollIntervalMinutes` |
 | `HEARTBEAT_ENABLED` | `HOMOTECHSUALBOT_Bot__Heartbeat__Enabled` |
 | `HEARTBEAT_PUSH_URL` | `HOMOTECHSUALBOT_Bot__Heartbeat__PushUrl` |
 | `HEARTBEAT_INTERVAL_SECONDS` | `HOMOTECHSUALBOT_Bot__Heartbeat__IntervalSeconds` |

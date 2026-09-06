@@ -139,6 +139,11 @@ jobs:
         'HOMOTECHSUALBOT_Bot__YoutubeMonitor__PollIntervalMinutes=${{ secrets.YOUTUBE_POLL_INTERVAL_MINUTES || '15' }}' \
         'HOMOTECHSUALBOT_Bot__YoutubeMonitor__DefaultPostTitleTemplate=${{ secrets.YOUTUBE_DEFAULT_POST_TITLE_TEMPLATE || '[{ChannelName}] {VideoTitle}' }}' \
         'HOMOTECHSUALBOT_Bot__YoutubeMonitor__DefaultPostBodyTemplate=${{ secrets.YOUTUBE_DEFAULT_POST_BODY_TEMPLATE || 'New video from **{ChannelName}**\n{VideoUrl}' }}' \
+        'HOMOTECHSUALBOT_Bot__GitHubMonitor__Enabled=${{ secrets.GH_MONITOR_ENABLED || 'false' }}' \
+        'HOMOTECHSUALBOT_Bot__GitHubMonitor__DefaultChannelId=${{ secrets.GH_DEFAULT_CHANNEL_ID || '0' }}' \
+        'HOMOTECHSUALBOT_Bot__GitHubMonitor__RoleId=${{ secrets.GH_MONITOR_ROLE_ID || '0' }}' \
+        'HOMOTECHSUALBOT_Bot__GitHubMonitor__Token=${{ secrets.GH_MONITOR_TOKEN }}' \
+        'HOMOTECHSUALBOT_Bot__GitHubMonitor__PollIntervalMinutes=${{ secrets.GH_POLL_INTERVAL_MINUTES || '10' }}' \
         'HOMOTECHSUALBOT_Bot__Heartbeat__Enabled=${{ secrets.HEARTBEAT_ENABLED || 'false' }}' \
         'HOMOTECHSUALBOT_Bot__Heartbeat__PushUrl=${{ secrets.HEARTBEAT_PUSH_URL }}' \
         'HOMOTECHSUALBOT_Bot__Heartbeat__IntervalSeconds=${{ secrets.HEARTBEAT_INTERVAL_SECONDS || '60' }}' \
