@@ -11,7 +11,7 @@ Discord bot for the Homotechsual community server, built with C# (.NET 10) and [
 * **Moderation action logging**: posts a rich embed to a configured forum channel for every moderation action (ban, unban, kick, mute, unmute, warn, clear, purge, lock/unlock, slowmode, and automated single-message deletions)
 * **Cross-channel spam detection**: flags users who post identical messages across multiple channels within a configurable time window, alerting moderators with interactive ban/dismiss buttons
 * **YouTube channel monitor**: polls configured YouTube channels and posts new uploads to a Discord forum channel
-* **GitHub repository monitor**: polls tracked repositories and posts new issues, pull requests, workflow runs, and releases — each category individually togglable at runtime and routable to its own channel
+* **GitHub repository monitor**: polls tracked repositories and posts new issues, pull requests, workflow runs, and releases - each category individually togglable at runtime and routable to its own channel
 * **Permission-aware error handling**: friendly ephemeral responses when permission checks fail
 * **Deployment via GitHub Actions**: CI build gate → SSH deploy to Linux host with systemd
 
@@ -58,7 +58,7 @@ The bot requires the following permissions (the invite URL should include these)
 * Manage Channels (for lock/slowmode)
 * Create Public Threads (for moderation log forum posts)
 
-> **Note:** The **Message Content** privileged intent must be enabled in the [Discord Developer Portal](https://discord.com/developers/applications) for the single-message enforcement and cross-channel spam detection features to function. Restart the bot after enabling it — no token refresh is required.
+> **Note:** The **Message Content** privileged intent must be enabled in the [Discord Developer Portal](https://discord.com/developers/applications) for the single-message enforcement and cross-channel spam detection features to function. Restart the bot after enabling it - no token refresh is required.
 
 ## 📖 Commands
 
@@ -85,7 +85,7 @@ The bot requires the following permissions (the invite URL should include these)
 | `/mute <user> <duration> [reason]` | Moderate Members | Moderate Members |
 | `/unmute <user>` | Moderate Members | Moderate Members |
 | `/warn <user> <reason>` | Kick Members | Kick Members |
-| `/warnings <user>` | Manage Messages | — |
+| `/warnings <user>` | Manage Messages | - |
 | `/clear <amount>` | Manage Messages | Manage Messages |
 | `/purge_user <user> <amount>` | Manage Messages | Manage Messages |
 | `/lock [channel]` | Manage Channels | Manage Channels |
@@ -226,7 +226,7 @@ Notes:
 
 ### GitHub Monitor
 
-Set `GitHubMonitor:Enabled` to `true` to register the background poller, then manage everything else at runtime with the `/github` commands. The configuration below is only a first-run seed — once the database rows exist the slash commands are the source of truth.
+Set `GitHubMonitor:Enabled` to `true` to register the background poller, then manage everything else at runtime with the `/github` commands. The configuration below is only a first-run seed - once the database rows exist the slash commands are the source of truth.
 
 | Setting | Description |
 | --- | --- |
@@ -263,9 +263,10 @@ These commands require the **Administrator** permission.
 | `/github enable <enabled>` | Enable or disable GitHub monitoring globally |
 | `/github set-default-channel <channel>` | Set the fallback notification channel |
 | `/github set-role [role]` | Set or clear the role mentioned on notifications |
-| `/github set-interval <minutes>` | Set the polling interval (5–1440 minutes) |
+| `/github set-interval <minutes>` | Set the polling interval (5-1440 minutes) |
 | `/github add-repo <repository> [channel]` | Track a repository (`owner/name` or a GitHub URL) |
 | `/github remove-repo <repository>` | Stop tracking a repository |
+| `/github set-category-channel <repository> <category> [channel]` | Route one category to a channel; omit the channel to restore repository/default routing |
 | `/github toggle <repository> <category> <enabled> [channel]` | Enable/disable `issues`, `pulls`, `actions`, or `releases` and optionally route them to their own channel |
 | `/github set-repo-enabled <repository> <enabled>` | Pause or resume all notifications for a repository |
 | `/github list` | Show the current GitHub monitor configuration |

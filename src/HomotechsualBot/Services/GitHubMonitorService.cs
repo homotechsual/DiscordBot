@@ -111,7 +111,7 @@ public class GitHubMonitorService : BackgroundService
 
         if (settings == null || !settings.Enabled)
         {
-            _logger.LogDebug("GitHub monitor is disabled — skipping poll.");
+            _logger.LogDebug("GitHub monitor is disabled - skipping poll.");
             return pollInterval;
         }
 
@@ -131,7 +131,7 @@ public class GitHubMonitorService : BackgroundService
 
         if (repositories.Count == 0)
         {
-            _logger.LogDebug("GitHub monitor has no tracked repositories — skipping poll.");
+            _logger.LogDebug("GitHub monitor has no tracked repositories - skipping poll.");
             return pollInterval;
         }
 
@@ -146,7 +146,7 @@ public class GitHubMonitorService : BackgroundService
                 if (channel == null)
                 {
                     _logger.LogWarning(
-                        "GitHub monitor could not resolve a text channel for {Repository} {Category} — skipping.",
+                        "GitHub monitor could not resolve a text channel for {Repository} {Category} - skipping.",
                         repository.FullName,
                         category);
                     continue;

@@ -141,6 +141,59 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
         await FollowupAsync($"✅ Stopped tracking `{owner}/{name}`.");
     }
 
+    [SlashCommand("set-category-channel", "Route one GitHub notification category to a channel")]
+    public async Task SetCategoryChannelAsync(
+        [Summary("repository", "Repository in owner/name form, or a GitHub URL")] string repository,
+        [Summary("category", "Notification category")]
+        [Choice("Issues", "issues")]
+        [Choice("Pull requests", "pulls")]
+        [Choice("Actions", "actions")]
+        [Choice("Releases", "releases")] string category,
+        [Summary("channel", "Channel override; omit to use the repository/default channel")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel? channel = null)
+    {
+        await DeferAsync(ephemeral: true);
+
+        if (!TryParseRepository(repository, out var owner, out var name))
+        {
+            await FollowupAsync("❌ Provide the repository as `owner/name` or a GitHub repository URL.");
+            return;
+        }
+
+        var tracked = await FindRepositoryAsync(owner, name);
+        if (tracked == null)
+        {
+            await FollowupAsync($"ℹ `{owner}/{name}` is not tracked. Add it with `/github add-repo` first.");
+            return;
+        }
+
+        var channelId = channel?.Id ?? 0;
+        switch (category)
+        {
+            case "issues":
+                tracked.IssuesChannelId = channelId;
+                break;
+            case "pulls":
+                tracked.PullRequestsChannelId = channelId;
+                break;
+            case "actions":
+                tracked.ActionsChannelId = channelId;
+                break;
+            case "releases":
+                tracked.ReleasesChannelId = channelId;
+                break;
+            default:
+                await FollowupAsync("❌ Unknown category.");
+                return;
+        }
+
+        tracked.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        await FollowupAsync(channel == null
+            ? $"✅ `{category}` for `{tracked.FullName}` will use the repository/default channel."
+            : $"✅ `{category}` for `{tracked.FullName}` will be sent to <#{channel.Id}>.");
+    }
+
     [SlashCommand("toggle", "Enable or disable a notification category for a repository")]
     public async Task ToggleCategoryAsync(
         [Summary("repository", "Repository in owner/name form, or a GitHub URL")] string repository,
@@ -264,7 +317,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
 
                 var repoChannel = repository.ChannelId == 0 ? "default" : $"<#{repository.ChannelId}>";
                 var status = repository.IsEnabled ? "Enabled" : "Disabled";
-                return $"• `{repository.FullName}` — {status} → {repoChannel}\n  {categories}";
+                return $"• `{repository.FullName}` - {status} -> {repoChannel}\n  {categories}";
             });
 
             embed.AddField("Tracked repositories", Truncate(string.Join("\n", lines), 1024), false);
