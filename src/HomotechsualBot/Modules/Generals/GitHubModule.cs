@@ -20,7 +20,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("enable", "Enable or disable GitHub monitoring globally")]
     public async Task EnableAsync([Summary("enabled", "Whether GitHub monitoring should be enabled")] bool enabled)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         var settings = await GetOrCreateSettingsAsync();
         settings.Enabled = enabled;
@@ -33,7 +33,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("set-default-channel", "Set the fallback channel for GitHub notifications")]
     public async Task SetDefaultChannelAsync([Summary("channel", "Channel to post into")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel channel)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         var settings = await GetOrCreateSettingsAsync();
         settings.DefaultChannelId = channel.Id;
@@ -46,7 +46,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("set-role", "Set the role mentioned on GitHub notifications (0 to clear)")]
     public async Task SetRoleAsync([Summary("role", "Role to mention, or omit to clear")] IRole? role = null)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         var settings = await GetOrCreateSettingsAsync();
         settings.RoleId = role?.Id ?? 0;
@@ -61,7 +61,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("set-interval", "Set the GitHub polling interval in minutes")]
     public async Task SetIntervalAsync([Summary("minutes", "Polling interval in minutes (minimum 5)")] int minutes)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         if (minutes < 5 || minutes > 1440)
         {
@@ -82,7 +82,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
         [Summary("repository", "Repository in owner/name form, or a GitHub URL")] string repository,
         [Summary("channel", "Channel for this repository's notifications")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel? channel = null)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         if (!TryParseRepository(repository, out var owner, out var name))
         {
@@ -120,7 +120,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("remove-repo", "Stop tracking a GitHub repository")]
     public async Task RemoveRepositoryAsync([Summary("repository", "Repository in owner/name form, or a GitHub URL")] string repository)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         if (!TryParseRepository(repository, out var owner, out var name))
         {
@@ -151,7 +151,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
         [Choice("Releases", "releases")] string category,
         [Summary("channel", "Channel override; omit to use the repository/default channel")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel? channel = null)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         if (!TryParseRepository(repository, out var owner, out var name))
         {
@@ -205,7 +205,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
         [Summary("enabled", "Whether this category should be enabled")] bool enabled,
         [Summary("channel", "Optional channel override for this category")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel? channel = null)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         if (!TryParseRepository(repository, out var owner, out var name))
         {
@@ -256,7 +256,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
         [Summary("repository", "Repository in owner/name form, or a GitHub URL")] string repository,
         [Summary("enabled", "Whether the repository should be polled")] bool enabled)
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         if (!TryParseRepository(repository, out var owner, out var name))
         {
@@ -283,7 +283,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("list", "List the current GitHub monitor configuration")]
     public async Task ListAsync()
     {
-        await DeferAsync(ephemeral: true);
+        await AcknowledgeAsync();
 
         var settings = await GetOrCreateSettingsAsync();
         var repositories = await _db.GitHubTrackedRepositories
@@ -368,6 +368,9 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..(maxLength - 1)] + "…";
+
+    private Task AcknowledgeAsync() =>
+        Context.Interaction.HasResponded ? Task.CompletedTask : DeferAsync(ephemeral: true);
 
     private async Task<GitHubMonitorSettings> GetOrCreateSettingsAsync()
     {

@@ -454,6 +454,14 @@ public class DiscordBotService
                 await interaction.RespondAsync($"❌ {blockReason}", ephemeral: true);
                 return;
             }
+
+            // Acknowledge GitHub commands before InteractionService dispatch so command
+            // binding and module execution cannot consume Discord's three-second window.
+            if (interaction is SocketSlashCommand { CommandName: "github" } githubCommand &&
+                !githubCommand.HasResponded)
+            {
+                await githubCommand.DeferAsync(ephemeral: true);
+            }
             
             var ctx = new SocketInteractionContext(_client, interaction);
             
