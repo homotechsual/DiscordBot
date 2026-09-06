@@ -12,6 +12,8 @@ public class HomotechsualBotContext : DbContext
     public DbSet<FeedPostState> FeedPostStates => Set<FeedPostState>();
     public DbSet<YoutubeMonitorSettings> YoutubeMonitorSettings => Set<YoutubeMonitorSettings>();
     public DbSet<YoutubeTrackedChannel> YoutubeTrackedChannels => Set<YoutubeTrackedChannel>();
+    public DbSet<GitHubMonitorSettings> GitHubMonitorSettings => Set<GitHubMonitorSettings>();
+    public DbSet<GitHubTrackedRepository> GitHubTrackedRepositories => Set<GitHubTrackedRepository>();
     public DbSet<SingleMessageChannelState> SingleMessageChannelStates => Set<SingleMessageChannelState>();
     public DbSet<SingleMessageRecord> SingleMessageRecords => Set<SingleMessageRecord>();
     public DbSet<UserWarning> UserWarnings => Set<UserWarning>();
@@ -47,6 +49,31 @@ public class HomotechsualBotContext : DbContext
             entity.Property(x => x.ChannelId).IsRequired();
             entity.Property(x => x.ChannelName).IsRequired();
             entity.Property(x => x.KeywordFilters).IsRequired(false);
+            entity.Property(x => x.IsEnabled).HasDefaultValue(true);
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            entity.Property(x => x.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+        });
+
+        modelBuilder.Entity<GitHubMonitorSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Enabled).HasDefaultValue(false);
+            entity.Property(x => x.PollIntervalMinutes).HasDefaultValue(10);
+            entity.Property(x => x.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            entity.Property(x => x.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+        });
+
+        modelBuilder.Entity<GitHubTrackedRepository>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.Owner, x.Name }).IsUnique();
+            entity.Ignore(x => x.FullName);
+            entity.Property(x => x.Owner).IsRequired();
+            entity.Property(x => x.Name).IsRequired();
+            entity.Property(x => x.IssuesEnabled).HasDefaultValue(true);
+            entity.Property(x => x.PullRequestsEnabled).HasDefaultValue(true);
+            entity.Property(x => x.ActionsEnabled).HasDefaultValue(false);
+            entity.Property(x => x.ReleasesEnabled).HasDefaultValue(true);
             entity.Property(x => x.IsEnabled).HasDefaultValue(true);
             entity.Property(x => x.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
             entity.Property(x => x.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");

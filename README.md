@@ -11,6 +11,7 @@ Discord bot for the Homotechsual community server, built with C# (.NET 10) and [
 * **Moderation action logging**: posts a rich embed to a configured forum channel for every moderation action (ban, unban, kick, mute, unmute, warn, clear, purge, lock/unlock, slowmode, and automated single-message deletions)
 * **Cross-channel spam detection**: flags users who post identical messages across multiple channels within a configurable time window, alerting moderators with interactive ban/dismiss buttons
 * **YouTube channel monitor**: polls configured YouTube channels and posts new uploads to a Discord forum channel
+* **GitHub repository monitor**: polls tracked repositories and posts new issues, pull requests, workflow runs, and releases — each category individually togglable at runtime and routable to its own channel
 * **Permission-aware error handling**: friendly ephemeral responses when permission checks fail
 * **Deployment via GitHub Actions**: CI build gate → SSH deploy to Linux host with systemd
 
@@ -137,6 +138,14 @@ All settings live under the `Bot` key in `appsettings.json`:
       "DefaultPostBodyTemplate": "New video from **{ChannelName}**\n{VideoUrl}",
       "Channels": []
     },
+    "GitHubMonitor": {
+      "Enabled": false,
+      "DefaultChannelId": 0,
+      "RoleId": 0,
+      "Token": "",
+      "PollIntervalMinutes": 10,
+      "Repositories": []
+    },
     "Heartbeat": {
       "Enabled": false,
       "PushUrl": "",
@@ -214,6 +223,52 @@ Notes:
 * If a template is empty, the title falls back to: `[{ChannelName}] {VideoTitle}`.
 * Escaped newlines (`\\n`, `\\r\\n`, `\\r`) are converted to real line breaks at runtime.
 * Post titles are truncated to 100 characters (Discord's forum post title limit).
+
+### GitHub Monitor
+
+Set `GitHubMonitor:Enabled` to `true` to register the background poller, then manage everything else at runtime with the `/github` commands. The configuration below is only a first-run seed — once the database rows exist the slash commands are the source of truth.
+
+| Setting | Description |
+| --- | --- |
+| `Enabled` | Registers the GitHub poller at startup (required; runtime toggling only pauses polling) |
+| `DefaultChannelId` | Fallback channel used by repositories with no channel of their own |
+| `RoleId` | Optional role to mention on notifications (set `0` to disable mentions) |
+| `Token` | Optional GitHub personal access token; without one the API allows only 60 requests/hour |
+| `PollIntervalMinutes` | Polling cadence, clamped to a minimum of 5 (default: 10) |
+| `Repositories` | Optional startup seed list of repositories |
+
+Each entry in `Repositories` supports `Owner`, `Name`, `ChannelId`, and per-category `Issues`, `PullRequests`, `Actions`, `Releases` toggles plus `IssuesChannelId`, `PullRequestsChannelId`, `ActionsChannelId`, and `ReleasesChannelId` overrides.
+
+Environment variables use the standard prefix, for example:
+
+```bash
+HOMOTECHSUALBOT_Bot__GitHubMonitor__Enabled=true
+HOMOTECHSUALBOT_Bot__GitHubMonitor__DefaultChannelId=1234567890123456789
+HOMOTECHSUALBOT_Bot__GitHubMonitor__Token=ghp_xxx
+HOMOTECHSUALBOT_Bot__GitHubMonitor__Repositories__0__Owner=homotechsual
+HOMOTECHSUALBOT_Bot__GitHubMonitor__Repositories__0__Name=DiscordBot
+HOMOTECHSUALBOT_Bot__GitHubMonitor__Repositories__0__Actions=true
+```
+
+Channel resolution for a category falls back in this order: category channel → repository channel → `DefaultChannelId`.
+
+The first poll of a repository/category records a baseline and posts nothing; only items created after that are announced.
+
+#### GitHub Commands
+
+These commands require the **Administrator** permission.
+
+| Command | Description |
+| --- | --- |
+| `/github enable <enabled>` | Enable or disable GitHub monitoring globally |
+| `/github set-default-channel <channel>` | Set the fallback notification channel |
+| `/github set-role [role]` | Set or clear the role mentioned on notifications |
+| `/github set-interval <minutes>` | Set the polling interval (5–1440 minutes) |
+| `/github add-repo <repository> [channel]` | Track a repository (`owner/name` or a GitHub URL) |
+| `/github remove-repo <repository>` | Stop tracking a repository |
+| `/github toggle <repository> <category> <enabled> [channel]` | Enable/disable `issues`, `pulls`, `actions`, or `releases` and optionally route them to their own channel |
+| `/github set-repo-enabled <repository> <enabled>` | Pause or resume all notifications for a repository |
+| `/github list` | Show the current GitHub monitor configuration |
 
 ### Single-Message Channels
 

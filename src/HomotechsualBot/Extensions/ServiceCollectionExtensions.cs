@@ -41,6 +41,10 @@ public static class ServiceCollectionExtensions
                     $"Bot:YoutubeMonitor:ForumChannelId='{botSection["YoutubeMonitor:ForumChannelId"] ?? "<null>"}'",
                     $"Bot:YoutubeMonitor:RoleId='{botSection["YoutubeMonitor:RoleId"] ?? "<null>"}'",
                     $"Bot:YoutubeMonitor:PollIntervalMinutes='{botSection["YoutubeMonitor:PollIntervalMinutes"] ?? "<null>"}'",
+                    $"Bot:GitHubMonitor:Enabled='{botSection["GitHubMonitor:Enabled"] ?? "<null>"}'",
+                    $"Bot:GitHubMonitor:DefaultChannelId='{botSection["GitHubMonitor:DefaultChannelId"] ?? "<null>"}'",
+                    $"Bot:GitHubMonitor:RoleId='{botSection["GitHubMonitor:RoleId"] ?? "<null>"}'",
+                    $"Bot:GitHubMonitor:PollIntervalMinutes='{botSection["GitHubMonitor:PollIntervalMinutes"] ?? "<null>"}'",
                     $"Bot:Heartbeat:Enabled='{botSection["Heartbeat:Enabled"] ?? "<null>"}'",
                     $"Bot:Heartbeat:IntervalSeconds='{botSection["Heartbeat:IntervalSeconds"] ?? "<null>"}'",
                     $"Bot:Heartbeat:StartupDelaySeconds='{botSection["Heartbeat:StartupDelaySeconds"] ?? "<null>"}'",
@@ -148,6 +152,10 @@ public static class ServiceCollectionExtensions
         {
             services.AddHostedService<YoutubeMonitorService>();
             services.AddHostedService<YoutubeFeedUrlsEndpointHostedService>();
+        }
+        if (botConfig.GitHubMonitor.Enabled)
+        {
+            services.AddHostedService<GitHubMonitorService>();
         }
         services.AddHostedService<HeartbeatMonitorService>();
         services.AddHostedService<MetricsHostedService>();

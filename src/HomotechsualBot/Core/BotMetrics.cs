@@ -67,4 +67,36 @@ internal static class BotMetrics
             "Number of enabled YouTube references that could not be resolved to a feed URL.",
             new GaugeConfiguration { LabelNames = ServiceLabelNames })
         .WithLabels(ServiceLabelValues);
+
+    /// <summary>Number of enabled GitHub tracked repositories loaded on the last successful poll.</summary>
+    public static readonly IGauge GitHubTrackedRepositories = Metrics
+        .CreateGauge(
+            "bot_github_tracked_repositories_total",
+            "Number of enabled GitHub tracked repositories loaded on the last successful poll.",
+            new GaugeConfiguration { LabelNames = ServiceLabelNames })
+        .WithLabels(ServiceLabelValues);
+
+    /// <summary>Unix timestamp (seconds) of the last GitHub poll attempt.</summary>
+    public static readonly IGauge GitHubLastPollTimestamp = Metrics
+        .CreateGauge(
+            "bot_github_last_poll_timestamp_seconds",
+            "Unix timestamp of the last GitHub repository poll attempt.",
+            new GaugeConfiguration { LabelNames = ServiceLabelNames })
+        .WithLabels(ServiceLabelValues);
+
+    /// <summary>1 when the GitHub API rate-limit backoff is currently active; 0 otherwise.</summary>
+    public static readonly IGauge GitHubApiBackoffActive = Metrics
+        .CreateGauge(
+            "bot_github_api_backoff_active",
+            "1 when the GitHub API rate-limit backoff is active; 0 otherwise.",
+            new GaugeConfiguration { LabelNames = ServiceLabelNames })
+        .WithLabels(ServiceLabelValues);
+
+    /// <summary>Total GitHub notifications posted to Discord.</summary>
+    public static readonly ICounter GitHubNotificationsPosted = Metrics
+        .CreateCounter(
+            "bot_github_notifications_posted_total",
+            "Total number of GitHub notifications posted to Discord.",
+            new CounterConfiguration { LabelNames = ServiceLabelNames })
+        .WithLabels(ServiceLabelValues);
 }
