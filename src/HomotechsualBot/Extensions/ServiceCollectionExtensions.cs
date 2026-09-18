@@ -153,10 +153,8 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<YoutubeMonitorService>();
             services.AddHostedService<YoutubeFeedUrlsEndpointHostedService>();
         }
-        if (botConfig.GitHubMonitor.Enabled)
-        {
-            services.AddHostedService<GitHubMonitorService>();
-        }
+        // The worker must always be registered because its enabled state is runtime-editable in SQLite.
+        services.AddHostedService<GitHubMonitorService>();
         services.AddHostedService<HeartbeatMonitorService>();
         services.AddHostedService<MetricsHostedService>();
         services.AddHostedService<SingleMessageHistoryBackfillHostedService>();

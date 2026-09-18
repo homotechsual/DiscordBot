@@ -230,7 +230,7 @@ Set `GitHubMonitor:Enabled` to `true` to register the background poller, then ma
 
 | Setting | Description |
 | --- | --- |
-| `Enabled` | Registers the GitHub poller at startup (required; runtime toggling only pauses polling) |
+| `Enabled` | Seeds the initial enabled state; the worker is always registered and `/github enable` can toggle polling at runtime |
 | `DefaultChannelId` | Fallback channel used by repositories with no channel of their own |
 | `RoleId` | Optional role to mention on notifications (set `0` to disable mentions) |
 | `Token` | Optional GitHub personal access token; without one the API allows only 60 requests/hour |
