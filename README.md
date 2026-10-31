@@ -156,7 +156,7 @@ All settings live under the `Bot` key in `appsettings.json`:
   },
   "ModerationLog": {
     "ForumChannelId": 0,
-    "ModeratorRoleId": 0
+    "ModeratorRoleId": "1234567890,2345678901"
   },
   "CrossChannelSpam": {
     "Enabled": false,
@@ -321,7 +321,9 @@ The bot reuses one forum thread per user instead of creating a new thread for ev
 | Setting | Description |
 | --- | --- |
 | `ForumChannelId` | Forum channel ID where moderation log threads are created (`0` = disabled) |
-| `ModeratorRoleId` | Optional role to mention in log posts (`0` = no mention) |
+| `ModeratorRoleId` | Optional comma-separated role IDs in log embed footers (`0` = none). Existing single numeric IDs still work. |
+
+Keep using the `MODERATION_LOG_MODERATOR_ROLE_ID` secret and `ModerationLog:ModeratorRoleId` setting: to add roles, set the value to `1234567890,2345678901`. In JSON, quote comma-separated lists; existing numeric values need no changes. Surrounding whitespace is trimmed, duplicates are removed, and zero IDs are ignored. Empty entries, invalid IDs, or lists exceeding Discord's 2,048-character footer limit cause an explicit startup error. Restart or redeploy after changing the value. Footer role text does not ping roles or grant moderator permissions.
 
 ### Cross-Channel Spam Detection
 
@@ -395,7 +397,7 @@ HOMOTECHSUALBOT_Bot__Heartbeat__IntervalSeconds=60
 HOMOTECHSUALBOT_Bot__Heartbeat__StartupDelaySeconds=15
 HOMOTECHSUALBOT_Bot__Heartbeat__TimeoutSeconds=10
 HOMOTECHSUALBOT_ModerationLog__ForumChannelId=1234567890
-HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId=1234567890
+HOMOTECHSUALBOT_ModerationLog__ModeratorRoleId=1234567890,2345678901
 HOMOTECHSUALBOT_CrossChannelSpam__Enabled=false
 HOMOTECHSUALBOT_CrossChannelSpam__TimeWindowSeconds=30
 HOMOTECHSUALBOT_CrossChannelSpam__MinimumChannelCount=3

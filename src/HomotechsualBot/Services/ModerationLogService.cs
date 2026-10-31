@@ -15,6 +15,7 @@ public class ModerationLogService
     private readonly ModerationLogConfig _config;
     private readonly ILogger<ModerationLogService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly string _moderatorRoleFooter;
 
     public ModerationLogService(
         DiscordSocketClient? client,
@@ -26,6 +27,7 @@ public class ModerationLogService
         _config = config;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _moderatorRoleFooter = BuildModeratorRoleFooter(config);
     }
 
     public async Task LogSpamDetectedAsync(
@@ -294,7 +296,7 @@ public class ModerationLogService
         return new ThreadMatch(best.ThreadId, ThreadMatchKind.FuzzyUsername);
     }
 
-    private Embed BuildSpamEmbed(
+    internal Embed BuildSpamEmbed(
         IUser? user,
         IReadOnlyList<ITextChannel> channels,
         string fingerprint,
@@ -321,7 +323,7 @@ public class ModerationLogService
         return builder.Build();
     }
 
-    private Embed BuildActionEmbed(ModerationLogEntry entry)
+    internal Embed BuildActionEmbed(ModerationLogEntry entry)
     {
         var color = entry.ActionType switch
         {
@@ -358,8 +360,17 @@ public class ModerationLogService
 
     private void AppendModRoleFooter(EmbedBuilder builder)
     {
-        if (_config.ModeratorRoleId != 0)
-            builder.WithFooter($"<@&{_config.ModeratorRoleId}>");
+        if (_moderatorRoleFooter.Length != 0)
+            builder.WithFooter(_moderatorRoleFooter);
+    }
+
+    internal static string BuildModeratorRoleFooter(ModerationLogConfig config)
+    {
+        var footer = string.Join(" ", config.GetModeratorRoleIds().Select(id => $"<@&{id}>"));
+        if (footer.Length > EmbedFooterBuilder.MaxFooterTextLength)
+            throw new InvalidOperationException("ModerationLog:ModeratorRoleId contains too many roles for Discord's embed footer limit.");
+
+        return footer;
     }
 
     private static MessageComponent BuildSpamButtons(ulong userId, ulong guildId) =>
