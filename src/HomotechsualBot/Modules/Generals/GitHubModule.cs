@@ -135,10 +135,84 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
+        var subscriptionIds = await _db.GitHubWorkflowSubscriptions
+            .Where(x => x.RepositoryId == tracked.Id).Select(x => x.Id).ToListAsync();
+        var sourceIds = subscriptionIds.Select(x => x.ToString()).ToList();
+        var states = await _db.FeedPostStates
+            .Where(x => x.FeedType == "GitHub:Workflow" && sourceIds.Contains(x.SourceId)).ToListAsync();
+        _db.FeedPostStates.RemoveRange(states);
         _db.GitHubTrackedRepositories.Remove(tracked);
         await _db.SaveChangesAsync();
 
         await FollowupAsync($"✅ Stopped tracking `{owner}/{name}`.");
+    }
+
+    [SlashCommand("add-workflow", "Monitor a specific workflow in a channel")]
+    public async Task AddWorkflowAsync(
+        [Summary("repository", "Tracked repository in owner/name form")] string repository,
+        [Summary("workflow", "Workflow file name (e.g. deploy-next.yml) or numeric ID")] string workflow,
+        [Summary("channel", "Channel for this workflow")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel channel)
+    {
+        await AcknowledgeAsync();
+        workflow = workflow.Trim();
+        if (!TryParseRepository(repository, out var owner, out var name) || !GitHubWorkflowSubscription.IsValidWorkflow(workflow))
+        {
+            await FollowupAsync("❌ Provide a repository and a workflow file name such as `deploy-next.yml` or a numeric workflow ID.");
+            return;
+        }
+
+        var tracked = await FindRepositoryAsync(owner, name);
+        if (tracked == null)
+        {
+            await FollowupAsync($"ℹ `{owner}/{name}` is not tracked. Add it with `/github add-repo` first.");
+            return;
+        }
+
+        if (await _db.GitHubWorkflowSubscriptions.AnyAsync(x =>
+            x.RepositoryId == tracked.Id && x.Workflow == workflow && x.ChannelId == channel.Id))
+        {
+            await FollowupAsync($"ℹ `{workflow}` for `{tracked.FullName}` is already monitored in <#{channel.Id}>.");
+            return;
+        }
+
+        _db.GitHubWorkflowSubscriptions.Add(new GitHubWorkflowSubscription
+        {
+            RepositoryId = tracked.Id, Workflow = workflow, ChannelId = channel.Id
+        });
+        await _db.SaveChangesAsync();
+        await FollowupAsync($"✅ Monitoring `{workflow}` for `{tracked.FullName}` in <#{channel.Id}>. The first poll establishes a baseline.");
+    }
+
+    [SlashCommand("remove-workflow", "Stop monitoring a specific workflow in a channel")]
+    public async Task RemoveWorkflowAsync(
+        [Summary("repository", "Tracked repository in owner/name form")] string repository,
+        [Summary("workflow", "Workflow file name or numeric ID")] string workflow,
+        [Summary("channel", "Channel for this subscription")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel channel)
+    {
+        await AcknowledgeAsync();
+        workflow = workflow.Trim();
+        if (!TryParseRepository(repository, out var owner, out var name) || !GitHubWorkflowSubscription.IsValidWorkflow(workflow))
+        {
+            await FollowupAsync("❌ Provide a repository and a workflow file name or numeric workflow ID.");
+            return;
+        }
+
+        var tracked = await FindRepositoryAsync(owner, name);
+        var subscription = tracked == null ? null : await _db.GitHubWorkflowSubscriptions.FirstOrDefaultAsync(x =>
+            x.RepositoryId == tracked.Id && x.Workflow == workflow && x.ChannelId == channel.Id);
+        if (subscription == null)
+        {
+            await FollowupAsync("ℹ No matching workflow subscription was found.");
+            return;
+        }
+
+        var sourceId = subscription.Id.ToString();
+        var state = await _db.FeedPostStates.FirstOrDefaultAsync(x => x.FeedType == "GitHub:Workflow" && x.SourceId == sourceId);
+        if (state != null)
+            _db.FeedPostStates.Remove(state);
+        _db.GitHubWorkflowSubscriptions.Remove(subscription);
+        await _db.SaveChangesAsync();
+        await FollowupAsync($"✅ Stopped monitoring `{workflow}` for `{tracked!.FullName}` in <#{channel.Id}>.");
     }
 
     [SlashCommand("set-category-channel", "Route one GitHub notification category to a channel")]
@@ -290,6 +364,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
             .AsNoTracking()
             .OrderBy(x => x.Owner).ThenBy(x => x.Name)
             .ToListAsync();
+        var subscriptions = await _db.GitHubWorkflowSubscriptions.AsNoTracking().ToListAsync();
 
         var embed = new EmbedBuilder()
             .WithTitle("GitHub monitor")
@@ -322,6 +397,12 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
 
             embed.AddField("Tracked repositories", Truncate(string.Join("\n", lines), 1024), false);
         }
+
+        var workflowLines = from subscription in subscriptions
+                            join repository in repositories on subscription.RepositoryId equals repository.Id
+                            orderby repository.Owner, repository.Name, subscription.Workflow
+                            select $"• `{repository.FullName}` / `{subscription.Workflow}` → <#{subscription.ChannelId}>";
+        embed.AddField("Workflow subscriptions", Truncate(string.Join("\n", workflowLines.DefaultIfEmpty("None configured")), 1024), false);
 
         await FollowupAsync(embed: embed.Build());
     }

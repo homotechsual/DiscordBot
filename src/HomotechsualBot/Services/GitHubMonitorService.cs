@@ -37,14 +37,16 @@ public class GitHubMonitorService : BackgroundService
         DiscordSocketClient client,
         BotConfig config,
         IServiceProvider serviceProvider,
-        ILogger<GitHubMonitorService> logger)
+        ILogger<GitHubMonitorService> logger,
+        HttpClient? httpClient = null)
     {
         _client = client;
         _config = config;
         _serviceProvider = serviceProvider;
         _logger = logger;
 
-        _httpClient = new HttpClient { BaseAddress = new Uri(GitHubApiBaseUrl) };
+        _httpClient = httpClient ?? new HttpClient();
+        _httpClient.BaseAddress = new Uri(GitHubApiBaseUrl);
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("HomotechsualBot/1.0");
         _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         _httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
@@ -157,6 +159,24 @@ public class GitHubMonitorService : BackgroundService
                 if (IsBackingOff(out _))
                     return pollInterval;
             }
+
+            var subscriptions = await db.GitHubWorkflowSubscriptions
+                .AsNoTracking()
+                .Where(x => x.RepositoryId == repository.Id)
+                .ToListAsync(cancellationToken);
+            foreach (var subscription in subscriptions)
+            {
+                if (_client.GetChannel(subscription.ChannelId) is not IMessageChannel channel)
+                {
+                    _logger.LogWarning("GitHub monitor could not resolve channel {ChannelId} for {Repository} workflow {Workflow}.",
+                        subscription.ChannelId, repository.FullName, subscription.Workflow);
+                    continue;
+                }
+
+                await PollCategoryAsync(db, repository, settings, GitHubEventCategory.Actions, channel, cancellationToken, subscription);
+                if (IsBackingOff(out _))
+                    return pollInterval;
+            }
         }
 
         return pollInterval;
@@ -181,10 +201,11 @@ public class GitHubMonitorService : BackgroundService
         GitHubMonitorSettings settings,
         GitHubEventCategory category,
         IMessageChannel channel,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GitHubWorkflowSubscription? subscription = null)
     {
-        var feedType = $"GitHub:{category}";
-        var sourceId = repository.FullName;
+        var feedType = subscription == null ? $"GitHub:{category}" : "GitHub:Workflow";
+        var sourceId = subscription == null ? repository.FullName : subscription.Id.ToString();
 
         var state = await db.FeedPostStates
             .FirstOrDefaultAsync(x => x.FeedType == feedType && x.SourceId == sourceId, cancellationToken);
@@ -195,7 +216,8 @@ public class GitHubMonitorService : BackgroundService
             db.FeedPostStates.Add(state);
         }
 
-        var items = await FetchItemsAsync(repository, category, cancellationToken);
+        var pollStartedAt = DateTime.UtcNow;
+        var items = await FetchItemsAsync(repository, category, cancellationToken, subscription?.Workflow);
         if (items == null)
             return;
 
@@ -206,7 +228,7 @@ public class GitHubMonitorService : BackgroundService
         if (isBaseline)
         {
             state.LastPostedItemId = items.Count > 0 ? items.Max(x => x.Id).ToString() : "0";
-            state.LastCheckedAt = DateTime.UtcNow;
+            state.LastCheckedAt = pollStartedAt;
             await db.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -248,27 +270,31 @@ public class GitHubMonitorService : BackgroundService
                     category,
                     item.Id,
                     repository.FullName);
-                break;
+                return;
             }
 
-            if (item.Id > lastPostedId)
+            if (subscription == null && item.Id > lastPostedId)
             {
                 lastPostedId = item.Id;
                 state.LastPostedItemId = lastPostedId.ToString();
             }
 
-            state.LastCheckedAt = item.UpdatedAt > lastCheckedAt ? item.UpdatedAt : state.LastCheckedAt;
-            await db.SaveChangesAsync(cancellationToken);
+            if (subscription == null)
+            {
+                state.LastCheckedAt = item.UpdatedAt > lastCheckedAt ? item.UpdatedAt : state.LastCheckedAt;
+                await db.SaveChangesAsync(cancellationToken);
+            }
         }
 
-        state.LastCheckedAt = DateTime.UtcNow;
+        state.LastCheckedAt = pollStartedAt;
         await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<List<GitHubFeedItem>?> FetchItemsAsync(
         GitHubTrackedRepository repository,
         GitHubEventCategory category,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? workflow = null)
     {
         var owner = Uri.EscapeDataString(repository.Owner);
         var name = Uri.EscapeDataString(repository.Name);
@@ -277,6 +303,7 @@ public class GitHubMonitorService : BackgroundService
         {
             GitHubEventCategory.Issues => $"repos/{owner}/{name}/issues?state=all&sort=created&direction=desc&per_page={PageSize}",
             GitHubEventCategory.PullRequests => $"repos/{owner}/{name}/pulls?state=all&sort=created&direction=desc&per_page={PageSize}",
+            GitHubEventCategory.Actions when workflow != null => $"repos/{owner}/{name}/actions/workflows/{Uri.EscapeDataString(workflow)}/runs?status=completed&per_page={PageSize}",
             GitHubEventCategory.Actions => $"repos/{owner}/{name}/actions/runs?status=completed&per_page={PageSize}",
             GitHubEventCategory.Releases => $"repos/{owner}/{name}/releases?per_page={PageSize}",
             _ => null
@@ -305,10 +332,11 @@ public class GitHubMonitorService : BackgroundService
                 }
 
                 _logger.LogWarning(
-                    "GitHub API returned {StatusCode} while fetching {Category} for {Repository}.",
+                    "GitHub API returned {StatusCode} while fetching {Category} for {Repository}, workflow {Workflow}.",
                     (int)response.StatusCode,
                     category,
-                    repository.FullName);
+                    repository.FullName,
+                    workflow);
                 return null;
             }
 

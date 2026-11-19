@@ -284,10 +284,14 @@ These commands require the **Administrator** permission.
 | `/github set-interval <minutes>` | Set the polling interval (5-1440 minutes) |
 | `/github add-repo <repository> [channel]` | Track a repository (`owner/name` or a GitHub URL) |
 | `/github remove-repo <repository>` | Stop tracking a repository |
+| `/github add-workflow <repository> <workflow> <channel>` | Monitor one workflow in a channel |
+| `/github remove-workflow <repository> <workflow> <channel>` | Remove that workflow subscription |
 | `/github set-category-channel <repository> <category> [channel]` | Route one category to a channel; omit the channel to restore repository/default routing |
 | `/github toggle <repository> <category> <enabled> [channel]` | Enable/disable `issues`, `pulls`, `actions`, or `releases` and optionally route them to their own channel |
 | `/github set-repo-enabled <repository> <enabled>` | Pause or resume all notifications for a repository |
 | `/github list` | Show the current GitHub monitor configuration |
+
+Use the workflow file name from `.github/workflows` (for example `deploy-next.yml`) or the numeric GitHub workflow ID. Add the repository first and disable unwanted categories with `/github toggle`; enable monitoring with `/github enable true`. Each workflow/channel subscription has its own first-poll baseline and reports completed workflow runs, not individual jobs. It works even when repository-wide Actions notifications are off; if they are on, both notifications can be sent. Disabling or removing a repository also disables or removes its subscriptions. Each subscription adds one API request per poll and reads the 20 most recent runs. Private repositories require Actions read permission.
 
 ### Single-Message Channels
 
