@@ -247,6 +247,9 @@ public class GitHubMonitorService : BackgroundService
 
         foreach (var item in pending)
         {
+            if (category == GitHubEventCategory.Actions && item.Status == "success" && !string.IsNullOrWhiteSpace(item.HeadSha))
+                await FetchDeploymentUrlsAsync(repository, item, cancellationToken);
+
             try
             {
                 await channel.SendMessageAsync(
@@ -288,6 +291,105 @@ public class GitHubMonitorService : BackgroundService
 
         state.LastCheckedAt = pollStartedAt;
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task FetchDeploymentUrlsAsync(
+        GitHubTrackedRepository repository, GitHubFeedItem item, CancellationToken cancellationToken)
+    {
+        var owner = Uri.EscapeDataString(repository.Owner);
+        var name = Uri.EscapeDataString(repository.Name);
+        var deploymentsPath = $"repos/{owner}/{name}/deployments";
+
+        try
+        {
+            var deployments = await FetchArrayPagesAsync(
+                $"{deploymentsPath}?sha={Uri.EscapeDataString(item.HeadSha)}", cancellationToken);
+            foreach (var deployment in deployments)
+            {
+                var deploymentId = GetInt64(deployment, "id");
+                if (deploymentId <= 0)
+                    continue;
+
+                var statuses = await FetchArrayPagesAsync($"{deploymentsPath}/{deploymentId}/statuses?", cancellationToken);
+                foreach (var status in statuses)
+                {
+                    if (GetString(status, "state") != "success" ||
+                        !IsRunLogUrl(GetString(status, "log_url"), item.Url) ||
+                        !Uri.TryCreate(GetString(status, "environment_url"), UriKind.Absolute, out var environmentUrl) ||
+                        (environmentUrl.Scheme != Uri.UriSchemeHttp && environmentUrl.Scheme != Uri.UriSchemeHttps))
+                        continue;
+
+                    var url = environmentUrl.AbsoluteUri.Replace(")", "%29", StringComparison.Ordinal);
+                    if (url.Length > 1000)
+                    {
+                        _logger.LogWarning("Deployment URL for GitHub workflow run {RunId} in {Repository} exceeds Discord's field limit.",
+                            item.Id, repository.FullName);
+                        continue;
+                    }
+
+                    if (item.DeploymentUrls.Contains(url, StringComparer.Ordinal))
+                        continue;
+
+                    if (item.DeploymentUrls.Count == 23 ||
+                        item.DeploymentUrls.Sum(existing => existing.Length + 29) + url.Length + 29 > 4000)
+                    {
+                        _logger.LogWarning("GitHub workflow run {RunId} in {Repository} has more deployment URLs than fit in a Discord embed.",
+                            item.Id, repository.FullName);
+                        continue;
+                    }
+
+                    item.DeploymentUrls.Add(url);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException or OperationCanceledException or IOException)
+        {
+            _logger.LogWarning(ex, "Could not retrieve deployment URLs for GitHub workflow run {RunId} in {Repository}; posting the run without complete deployment information.",
+                item.Id, repository.FullName);
+        }
+    }
+
+    private async Task<List<JsonElement>> FetchArrayPagesAsync(string path, CancellationToken cancellationToken)
+    {
+        var results = new List<JsonElement>();
+        for (var page = 1; ; page++)
+        {
+            var separator = path.EndsWith('?') ? string.Empty : "&";
+            using var response = await _httpClient.GetAsync($"{path}{separator}per_page=100&page={page}", cancellationToken);
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests &&
+                response.Headers.TryGetValues("x-ratelimit-remaining", out var remaining) &&
+                remaining.FirstOrDefault() == "0")
+            {
+                ApplyBackoff();
+            }
+            response.EnsureSuccessStatusCode();
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                throw new JsonException("GitHub deployment response was not an array.");
+
+            var count = document.RootElement.GetArrayLength();
+            results.AddRange(document.RootElement.EnumerateArray().Select(element => element.Clone()));
+            if (count < 100)
+                return results;
+        }
+    }
+
+    private static bool IsRunLogUrl(string logUrl, string runUrl)
+    {
+        if (!Uri.TryCreate(logUrl, UriKind.Absolute, out var log) ||
+            !Uri.TryCreate(runUrl, UriKind.Absolute, out var run) ||
+            log.Scheme != run.Scheme || log.Authority != run.Authority)
+            return false;
+
+        var runPath = run.AbsolutePath.TrimEnd('/');
+        return log.AbsolutePath.Equals(runPath, StringComparison.OrdinalIgnoreCase) ||
+            log.AbsolutePath.StartsWith(runPath + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<List<GitHubFeedItem>?> FetchItemsAsync(
@@ -434,6 +536,7 @@ public class GitHubMonitorService : BackgroundService
                 Url = GetString(element, "html_url"),
                 Author = GetString(element.TryGetProperty("actor", out var actor) ? actor : default, "login"),
                 Status = GetString(element, "conclusion"),
+                HeadSha = GetString(element, "head_sha"),
                 Body = GetString(element, "head_branch") is { Length: > 0 } branch ? $"Branch `{branch}`" : string.Empty,
                 UpdatedAt = GetDateTime(element, "updated_at")
             });
@@ -494,6 +597,9 @@ public class GitHubMonitorService : BackgroundService
 
         if (!string.IsNullOrWhiteSpace(item.Body))
             builder.WithDescription(Truncate(item.Body, 500));
+
+        foreach (var url in item.DeploymentUrls)
+            builder.AddField("Deployment", $"[View deployment]({url})", true);
 
         return builder.Build();
     }
@@ -647,6 +753,8 @@ public class GitHubMonitorService : BackgroundService
         public string Author { get; init; } = string.Empty;
         public string Status { get; init; } = string.Empty;
         public string Body { get; init; } = string.Empty;
+        public string HeadSha { get; init; } = string.Empty;
+        public List<string> DeploymentUrls { get; } = [];
         public DateTime UpdatedAt { get; init; } = DateTime.UtcNow;
     }
 }
