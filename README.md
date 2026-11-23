@@ -286,14 +286,19 @@ These commands require the **Administrator** permission.
 | `/github remove-repo <repository>` | Stop tracking a repository |
 | `/github add-workflow <repository> <workflow> <channel>` | Monitor one workflow in a channel |
 | `/github remove-workflow <repository> <workflow> <channel>` | Remove that workflow subscription |
+| `/github add-issue-filter <repository> <channel> [include] [exclude]` | Add a label-filtered issue channel; comma-separate labels such as `type:feature` |
+| `/github remove-issue-filter <repository> <channel>` | Remove a label-filtered issue channel |
+| `/github list-issue-filters <repository>` | List label-filtered issue channels |
 | `/github set-category-channel <repository> <category> [channel]` | Route one category to a channel; omit the channel to restore repository/default routing |
 | `/github toggle <repository> <category> <enabled> [channel]` | Enable/disable `issues`, `pulls`, `actions`, or `releases` and optionally route them to their own channel |
 | `/github set-repo-enabled <repository> <enabled>` | Pause or resume all notifications for a repository |
 | `/github list` | Show the current GitHub monitor configuration |
 
+Issue filters replace repository-wide issue routing when at least one subscription exists. Use `include` to require any one of the listed labels and `exclude` to reject matching labels. For example, `/github add-issue-filter homotechsual/dotMARC #features type:feature` routes feature issues to a features channel, while `/github add-issue-filter homotechsual/dotMARC #issues exclude:type:feature` sends all non-feature issues to an issues channel. Labels are matched case-insensitively. Each issue subscription has an independent first-poll baseline and one API request per poll.
+
 Use the workflow file name from `.github/workflows` (for example `deploy-next.yml`) or the numeric GitHub workflow ID. Add the repository first and disable unwanted categories with `/github toggle`; enable monitoring with `/github enable true`. Each workflow/channel subscription has its own first-poll baseline and reports completed workflow runs, not individual jobs. It works even when repository-wide Actions notifications are off; if they are on, both notifications can be sent. Disabling or removing a repository also disables or removes its subscriptions. Each subscription adds one API request per poll and reads the 20 most recent runs. Private repositories require Actions read permission.
 
-Successful run notifications include available deployment environment links when the deployment status log URL identifies the run. Discovering links requires additional deployment and deployment-status API requests and, for private repositories, Deployments read permission. If deployment lookup fails, the run is still posted and the failure is logged.
+Successful run notifications display available deployment URLs and link buttons when the deployment status log URL identifies the run. URLs exceeding Discord's 512-character button limit are displayed without a button. Discovering links requires additional deployment and deployment-status API requests and, for private repositories, Deployments read permission. If deployment lookup fails, the run is still posted and the failure is logged.
 
 ### Single-Message Channels
 

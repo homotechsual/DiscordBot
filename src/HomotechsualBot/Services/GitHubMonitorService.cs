@@ -139,9 +139,16 @@ public class GitHubMonitorService : BackgroundService
 
         foreach (var repository in repositories)
         {
+            var issueSubscriptions = await db.GitHubIssueSubscriptions
+                .AsNoTracking()
+                .Where(x => x.RepositoryId == repository.Id)
+                .ToListAsync(cancellationToken);
+
             foreach (var category in Enum.GetValues<GitHubEventCategory>())
             {
                 if (!repository.IsCategoryEnabled(category))
+                    continue;
+                if (category == GitHubEventCategory.Issues && issueSubscriptions.Count > 0)
                     continue;
 
                 var channel = ResolveChannel(repository, settings, category);
@@ -156,6 +163,20 @@ public class GitHubMonitorService : BackgroundService
 
                 await PollCategoryAsync(db, repository, settings, category, channel, cancellationToken);
 
+                if (IsBackingOff(out _))
+                    return pollInterval;
+            }
+
+            foreach (var subscription in issueSubscriptions)
+            {
+                if (_client.GetChannel(subscription.ChannelId) is not IMessageChannel channel)
+                {
+                    _logger.LogWarning("GitHub monitor could not resolve channel {ChannelId} for {Repository} issue filters.",
+                        subscription.ChannelId, repository.FullName);
+                    continue;
+                }
+
+                await PollIssueSubscriptionAsync(db, repository, settings, subscription, channel, cancellationToken);
                 if (IsBackingOff(out _))
                     return pollInterval;
             }
@@ -195,6 +216,15 @@ public class GitHubMonitorService : BackgroundService
         return _client.GetChannel(channelId) as IMessageChannel;
     }
 
+    private async Task PollIssueSubscriptionAsync(
+        HomotechsualBotContext db,
+        GitHubTrackedRepository repository,
+        GitHubMonitorSettings settings,
+        GitHubIssueSubscription subscription,
+        IMessageChannel channel,
+        CancellationToken cancellationToken) =>
+        await PollCategoryWithIssueFilterAsync(db, repository, settings, subscription, channel, cancellationToken);
+
     private async Task PollCategoryAsync(
         HomotechsualBotContext db,
         GitHubTrackedRepository repository,
@@ -202,10 +232,34 @@ public class GitHubMonitorService : BackgroundService
         GitHubEventCategory category,
         IMessageChannel channel,
         CancellationToken cancellationToken,
-        GitHubWorkflowSubscription? subscription = null)
+        GitHubWorkflowSubscription? subscription = null) =>
+        await PollCategoryCoreAsync(db, repository, settings, category, channel, cancellationToken, subscription, null);
+
+    private async Task PollCategoryWithIssueFilterAsync(
+        HomotechsualBotContext db,
+        GitHubTrackedRepository repository,
+        GitHubMonitorSettings settings,
+        GitHubIssueSubscription issueSubscription,
+        IMessageChannel channel,
+        CancellationToken cancellationToken) =>
+        await PollCategoryCoreAsync(db, repository, settings, GitHubEventCategory.Issues, channel, cancellationToken, null, issueSubscription);
+
+    private async Task PollCategoryCoreAsync(
+        HomotechsualBotContext db,
+        GitHubTrackedRepository repository,
+        GitHubMonitorSettings settings,
+        GitHubEventCategory category,
+        IMessageChannel channel,
+        CancellationToken cancellationToken,
+        GitHubWorkflowSubscription? subscription = null,
+        GitHubIssueSubscription? issueSubscription = null)
     {
-        var feedType = subscription == null ? $"GitHub:{category}" : "GitHub:Workflow";
-        var sourceId = subscription == null ? repository.FullName : subscription.Id.ToString();
+        var feedType = subscription == null
+            ? issueSubscription == null ? $"GitHub:{category}" : "GitHub:IssueFilter"
+            : "GitHub:Workflow";
+        var sourceId = subscription == null
+            ? issueSubscription == null ? repository.FullName : issueSubscription.Id.ToString()
+            : subscription.Id.ToString();
 
         var state = await db.FeedPostStates
             .FirstOrDefaultAsync(x => x.FeedType == feedType && x.SourceId == sourceId, cancellationToken);
@@ -220,6 +274,15 @@ public class GitHubMonitorService : BackgroundService
         var items = await FetchItemsAsync(repository, category, cancellationToken, subscription?.Workflow);
         if (items == null)
             return;
+
+        if (issueSubscription != null)
+        {
+            var included = issueSubscription.GetIncludedLabels();
+            var excluded = issueSubscription.GetExcludedLabels();
+            items = items.Where(item =>
+                (included.Count == 0 || included.Any(label => item.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))) &&
+                !excluded.Any(label => item.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))).ToList();
+        }
 
         var isBaseline = string.IsNullOrWhiteSpace(state.LastPostedItemId) && state.LastCheckedAt == null;
         var lastPostedId = long.TryParse(state.LastPostedItemId, out var parsed) ? parsed : 0L;
@@ -255,6 +318,7 @@ public class GitHubMonitorService : BackgroundService
                 await channel.SendMessageAsync(
                     text: BuildMention(settings),
                     embed: BuildEmbed(repository, category, item),
+                    components: BuildDeploymentComponents(item.DeploymentUrls),
                     allowedMentions: settings.RoleId == 0 ? AllowedMentions.None : null);
 
                 BotMetrics.GitHubNotificationsPosted.Inc();
@@ -339,6 +403,9 @@ public class GitHubMonitorService : BackgroundService
                     }
 
                     item.DeploymentUrls.Add(url);
+                    if (url.Length > 512)
+                        _logger.LogWarning("Deployment URL for GitHub workflow run {RunId} in {Repository} exceeds Discord's button URL limit; displaying it without a button.",
+                            item.Id, repository.FullName);
                 }
             }
         }
@@ -485,6 +552,7 @@ public class GitHubMonitorService : BackgroundService
                 Author = GetString(element.TryGetProperty("user", out var user) ? user : default, "login"),
                 Status = GetString(element, "state"),
                 Body = GetString(element, "body"),
+                Labels = GetLabels(element),
                 UpdatedAt = GetDateTime(element, "updated_at")
             });
         }
@@ -598,10 +666,30 @@ public class GitHubMonitorService : BackgroundService
         if (!string.IsNullOrWhiteSpace(item.Body))
             builder.WithDescription(Truncate(item.Body, 500));
 
-        foreach (var url in item.DeploymentUrls)
-            builder.AddField("Deployment", $"[View deployment]({url})", true);
+        for (var i = 0; i < item.DeploymentUrls.Count; i++)
+        {
+            var label = item.DeploymentUrls.Count == 1 ? "Deployment" : $"Deployment {i + 1}";
+            builder.AddField(label, item.DeploymentUrls[i], false);
+        }
 
         return builder.Build();
+    }
+
+    private static MessageComponent? BuildDeploymentComponents(IReadOnlyList<string> urls)
+    {
+        var builder = new ComponentBuilder();
+        var buttonCount = 0;
+        for (var i = 0; i < urls.Count; i++)
+        {
+            if (urls[i].Length > 512)
+                continue;
+
+            var label = urls.Count == 1 ? "View deployment" : $"View deployment {i + 1}";
+            builder.WithButton(label, style: ButtonStyle.Link, url: urls[i], row: buttonCount / 5);
+            buttonCount++;
+        }
+
+        return buttonCount == 0 ? null : builder.Build();
     }
 
     private static string GetCategoryLabel(GitHubEventCategory category) => category switch
@@ -703,6 +791,24 @@ public class GitHubMonitorService : BackgroundService
         return active;
     }
 
+    private static List<string> GetLabels(JsonElement element)
+    {
+        var labels = new List<string>();
+        if (!element.TryGetProperty("labels", out var labelsElement) || labelsElement.ValueKind != JsonValueKind.Array)
+            return labels;
+
+        foreach (var label in labelsElement.EnumerateArray())
+        {
+            var name = label.ValueKind == JsonValueKind.Object
+                ? GetString(label, "name")
+                : label.ValueKind == JsonValueKind.String ? label.GetString() ?? string.Empty : string.Empty;
+            if (!string.IsNullOrWhiteSpace(name))
+                labels.Add(name);
+        }
+
+        return labels;
+    }
+
     private static string GetString(JsonElement element, string propertyName) =>
         element.ValueKind == JsonValueKind.Object &&
         element.TryGetProperty(propertyName, out var value) &&
@@ -753,6 +859,7 @@ public class GitHubMonitorService : BackgroundService
         public string Author { get; init; } = string.Empty;
         public string Status { get; init; } = string.Empty;
         public string Body { get; init; } = string.Empty;
+        public List<string> Labels { get; init; } = [];
         public string HeadSha { get; init; } = string.Empty;
         public List<string> DeploymentUrls { get; } = [];
         public DateTime UpdatedAt { get; init; } = DateTime.UtcNow;

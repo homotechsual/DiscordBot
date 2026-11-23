@@ -183,6 +183,32 @@ namespace HomotechsualBot.Migrations
                     b.ToTable("GitHubWorkflowSubscriptions");
                 });
 
+            modelBuilder.Entity("DiscordBot.Models.GitHubIssueSubscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<ulong>("ChannelId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ExcludeLabels")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IncludeLabels")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "ChannelId")
+                        .IsUnique();
+
+                    b.ToTable("GitHubIssueSubscriptions");
+                });
+
             modelBuilder.Entity("DiscordBot.Models.ModLogThreadLink", b =>
                 {
                     b.Property<int>("Id")
@@ -391,6 +417,15 @@ namespace HomotechsualBot.Migrations
                         .IsUnique();
 
                     b.ToTable("YoutubeTrackedChannels");
+                });
+
+            modelBuilder.Entity("DiscordBot.Models.GitHubIssueSubscription", b =>
+                {
+                    b.HasOne("DiscordBot.Models.GitHubTrackedRepository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("DiscordBot.Models.GitHubWorkflowSubscription", b =>

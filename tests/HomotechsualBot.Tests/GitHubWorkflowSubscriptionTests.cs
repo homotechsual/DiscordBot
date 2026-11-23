@@ -147,20 +147,56 @@ public class GitHubWorkflowSubscriptionTests
         Assert.Equal(1, proxy.Posts);
         var embed = Assert.IsType<Embed>(proxy.LastEmbed);
         Assert.Equal("https://github.com/example/repo/actions/runs/123", embed.Url);
-        var links = embed.Fields.Where(field => field.Name == "Deployment").Select(field => field.Value).ToList();
+        var links = embed.Fields.Where(field => field.Name.StartsWith("Deployment", StringComparison.Ordinal)).ToList();
         if (conclusion == "success" && !deploymentApiFails)
         {
             Assert.Equal(2, links.Count);
-            Assert.Contains("[View deployment](https://one.example/)", links);
-            Assert.Contains("[View deployment](https://two.example/)", links);
+            Assert.Equal(("Deployment 1", "https://one.example/"), (links[0].Name, links[0].Value));
+            Assert.Equal(("Deployment 2", "https://two.example/"), (links[1].Name, links[1].Value));
+            Assert.All(links, field => Assert.False(field.Inline));
+            var buttons = Assert.IsType<MessageComponent>(proxy.LastComponents).Components
+                .OfType<ActionRowComponent>().SelectMany(row => row.Components).OfType<ButtonComponent>().ToList();
+            Assert.Equal(2, buttons.Count);
+            Assert.Equal(("View deployment 1", ButtonStyle.Link, "https://one.example/"),
+                (buttons[0].Label, buttons[0].Style, buttons[0].Url));
+            Assert.Equal(("View deployment 2", ButtonStyle.Link, "https://two.example/"),
+                (buttons[1].Label, buttons[1].Style, buttons[1].Url));
             Assert.Equal(4, handler.DeploymentRequests);
         }
         else
         {
             Assert.Empty(links);
+            Assert.Null(proxy.LastComponents);
         }
         Assert.Equal(conclusion == "success", handler.DeploymentRequests > 0);
         Assert.Equal(deploymentApiFails, logger.DeploymentLookupFailed);
+    }
+
+    [Fact]
+    public void DeploymentButtonsHandleMultipleRowsAndLongUrls()
+    {
+        var method = typeof(GitHubMonitorService).GetMethod("BuildDeploymentComponents", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var urls = Enumerable.Range(1, 7).Select(i => $"https://example.com/{i}").ToList();
+        urls.Insert(1, "https://example.com/" + new string('a', 500));
+        var components = Assert.IsType<MessageComponent>(method.Invoke(null, [urls]));
+        var rows = components.Components.OfType<ActionRowComponent>().ToList();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(5, rows[0].Components.Count);
+        Assert.Equal(2, rows[1].Components.Count);
+        var buttons = rows.SelectMany(row => row.Components).OfType<ButtonComponent>().ToList();
+        Assert.Equal("View deployment 3", buttons[1].Label);
+        Assert.Equal("https://example.com/2", buttons[1].Url);
+        Assert.Null(method.Invoke(null, [new List<string> { urls[1] }]));
+        Assert.Null(method.Invoke(null, [new List<string>()]));
+        var single = Assert.IsType<MessageComponent>(method.Invoke(null, [new List<string> { urls[0] }]));
+        var button = Assert.IsType<ButtonComponent>(Assert.Single(Assert.IsType<ActionRowComponent>(Assert.Single(single.Components)).Components));
+        Assert.Equal("View deployment", button.Label);
+        var maximumButtonUrl = "https://example.com/" + new string('a', 492);
+        Assert.Equal(512, maximumButtonUrl.Length);
+        Assert.IsType<MessageComponent>(method.Invoke(null, [new List<string> { maximumButtonUrl }]));
+        var maximum = Assert.IsType<MessageComponent>(method.Invoke(null,
+            [Enumerable.Range(1, 23).Select(i => $"https://example.com/{i}").ToList()]));
+        Assert.Equal(5, maximum.Components.Count);
     }
 
     private static async Task Poll(GitHubMonitorService service, HomotechsualBotContext db,
@@ -177,6 +213,7 @@ public class GitHubWorkflowSubscriptionTests
         public int Posts { get; private set; }
         public bool Fail { get; set; }
         public Embed? LastEmbed { get; private set; }
+        public MessageComponent? LastComponents { get; private set; }
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
@@ -189,6 +226,8 @@ public class GitHubWorkflowSubscriptionTests
                 Posts++;
                 var embedIndex = Array.FindIndex(method.GetParameters(), parameter => parameter.Name == "embed");
                 LastEmbed = (Embed?)args![embedIndex];
+                var componentsIndex = Array.FindIndex(method.GetParameters(), parameter => parameter.Name == "components");
+                LastComponents = (MessageComponent?)args[componentsIndex];
                 return Task.FromResult<IUserMessage>(null!);
             }
             throw new NotSupportedException(method?.Name);

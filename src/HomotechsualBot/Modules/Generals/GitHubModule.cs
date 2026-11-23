@@ -135,6 +135,13 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
+        var issueSubscriptionIds = await _db.GitHubIssueSubscriptions
+            .Where(x => x.RepositoryId == tracked.Id).Select(x => x.Id).ToListAsync();
+        var issueSourceIds = issueSubscriptionIds.Select(x => x.ToString()).ToList();
+        _db.FeedPostStates.RemoveRange(_db.FeedPostStates.Where(x =>
+            x.FeedType == "GitHub:IssueFilter" && issueSourceIds.Contains(x.SourceId)));
+        _db.GitHubIssueSubscriptions.RemoveRange(_db.GitHubIssueSubscriptions.Where(x => x.RepositoryId == tracked.Id));
+
         var subscriptionIds = await _db.GitHubWorkflowSubscriptions
             .Where(x => x.RepositoryId == tracked.Id).Select(x => x.Id).ToListAsync();
         var sourceIds = subscriptionIds.Select(x => x.ToString()).ToList();
@@ -145,6 +152,121 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
         await _db.SaveChangesAsync();
 
         await FollowupAsync($"✅ Stopped tracking `{owner}/{name}`.");
+    }
+
+    [SlashCommand("add-issue-filter", "Monitor issues with optional label filters in a channel")]
+    public async Task AddIssueFilterAsync(
+        [Summary("repository", "Tracked repository in owner/name form")] string repository,
+        [Summary("channel", "Channel for filtered issue notifications")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel channel,
+        [Summary("include", "Comma-separated labels required (for example type:feature)")] string? include = null,
+        [Summary("exclude", "Comma-separated labels to exclude (for example type:feature)")] string? exclude = null)
+    {
+        await AcknowledgeAsync();
+
+        if (!TryParseRepository(repository, out var owner, out var name))
+        {
+            await FollowupAsync("❌ Provide the repository as `owner/name` or a GitHub repository URL.");
+            return;
+        }
+
+        var tracked = await FindRepositoryAsync(owner, name);
+        if (tracked == null)
+        {
+            await FollowupAsync("ℹ The repository is not tracked. Add it with `/github add-repo` first.");
+            return;
+        }
+
+        var existing = await _db.GitHubIssueSubscriptions
+            .FirstOrDefaultAsync(x => x.RepositoryId == tracked.Id && x.ChannelId == channel.Id);
+        if (existing == null)
+        {
+            existing = new GitHubIssueSubscription
+            {
+                RepositoryId = tracked.Id,
+                ChannelId = channel.Id
+            };
+            _db.GitHubIssueSubscriptions.Add(existing);
+        }
+
+        existing.IncludeLabels = NormalizeLabels(include);
+        existing.ExcludeLabels = NormalizeLabels(exclude);
+        await _db.SaveChangesAsync();
+
+        var included = string.IsNullOrWhiteSpace(existing.IncludeLabels) ? "all labels" : $"include `{existing.IncludeLabels}`";
+        var excluded = string.IsNullOrWhiteSpace(existing.ExcludeLabels) ? "no exclusions" : $"exclude `{existing.ExcludeLabels}`";
+        await FollowupAsync($"✅ Filtering `{tracked.FullName}` issues to <#{channel.Id}>; {included}; {excluded}.");
+    }
+
+    [SlashCommand("remove-issue-filter", "Stop filtered issue notifications for a repository channel")]
+    public async Task RemoveIssueFilterAsync(
+        [Summary("repository", "Tracked repository in owner/name form")] string repository,
+        [Summary("channel", "Channel with the issue filter")][ChannelTypes(ChannelType.Text, ChannelType.News)] ITextChannel channel)
+    {
+        await AcknowledgeAsync();
+
+        if (!TryParseRepository(repository, out var owner, out var name))
+        {
+            await FollowupAsync("❌ Provide the repository as `owner/name` or a GitHub repository URL.");
+            return;
+        }
+
+        var tracked = await FindRepositoryAsync(owner, name);
+        if (tracked == null)
+        {
+            await FollowupAsync("ℹ The repository is not tracked.");
+            return;
+        }
+
+        var subscription = await _db.GitHubIssueSubscriptions
+            .FirstOrDefaultAsync(x => x.RepositoryId == tracked.Id && x.ChannelId == channel.Id);
+        if (subscription == null)
+        {
+            await FollowupAsync("ℹ No issue filter is configured for that repository and channel.");
+            return;
+        }
+
+        _db.GitHubIssueSubscriptions.Remove(subscription);
+        _db.FeedPostStates.RemoveRange(_db.FeedPostStates.Where(x =>
+            x.FeedType == "GitHub:IssueFilter" && x.SourceId == subscription.Id.ToString()));
+        await _db.SaveChangesAsync();
+        await FollowupAsync($"✅ Removed issue filtering for `{tracked.FullName}` in <#{channel.Id}>.");
+    }
+
+    [SlashCommand("list-issue-filters", "List filtered issue channels for a repository")]
+    public async Task ListIssueFiltersAsync([Summary("repository", "Tracked repository in owner/name form")] string repository)
+    {
+        await AcknowledgeAsync();
+
+        if (!TryParseRepository(repository, out var owner, out var name))
+        {
+            await FollowupAsync("❌ Provide the repository as `owner/name` or a GitHub repository URL.");
+            return;
+        }
+
+        var tracked = await FindRepositoryAsync(owner, name);
+        if (tracked == null)
+        {
+            await FollowupAsync("ℹ The repository is not tracked.");
+            return;
+        }
+
+        var subscriptions = await _db.GitHubIssueSubscriptions
+            .Where(x => x.RepositoryId == tracked.Id)
+            .OrderBy(x => x.ChannelId)
+            .ToListAsync();
+        if (subscriptions.Count == 0)
+        {
+            await FollowupAsync($"ℹ `{tracked.FullName}` has no filtered issue channels.");
+            return;
+        }
+
+        var lines = subscriptions.Select(x =>
+        {
+            var include = string.IsNullOrWhiteSpace(x.IncludeLabels) ? "all labels" : $"include `{x.IncludeLabels}`";
+            var exclude = string.IsNullOrWhiteSpace(x.ExcludeLabels) ? "no exclusions" : $"exclude `{x.ExcludeLabels}`";
+            return $"• <#{x.ChannelId}> — {include}; {exclude}";
+        });
+        await FollowupAsync($"**Issue filters for `{tracked.FullName}`**\n{string.Join("\n", lines)}");
     }
 
     [SlashCommand("add-workflow", "Monitor a specific workflow in a channel")]
@@ -446,6 +568,12 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
 
         return owner.Length > 0 && name.Length > 0;
     }
+
+    private static string? NormalizeLabels(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? null
+            : string.Join(",", value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase));
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..(maxLength - 1)] + "…";

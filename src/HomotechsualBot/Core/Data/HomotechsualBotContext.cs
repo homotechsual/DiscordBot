@@ -15,6 +15,7 @@ public class HomotechsualBotContext : DbContext
     public DbSet<GitHubMonitorSettings> GitHubMonitorSettings => Set<GitHubMonitorSettings>();
     public DbSet<GitHubTrackedRepository> GitHubTrackedRepositories => Set<GitHubTrackedRepository>();
     public DbSet<GitHubWorkflowSubscription> GitHubWorkflowSubscriptions => Set<GitHubWorkflowSubscription>();
+    public DbSet<GitHubIssueSubscription> GitHubIssueSubscriptions => Set<GitHubIssueSubscription>();
     public DbSet<SingleMessageChannelState> SingleMessageChannelStates => Set<SingleMessageChannelState>();
     public DbSet<SingleMessageRecord> SingleMessageRecords => Set<SingleMessageRecord>();
     public DbSet<UserWarning> UserWarnings => Set<UserWarning>();
@@ -85,6 +86,16 @@ public class HomotechsualBotContext : DbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Workflow).IsRequired();
             entity.HasIndex(x => new { x.RepositoryId, x.Workflow, x.ChannelId }).IsUnique();
+            entity.HasOne<GitHubTrackedRepository>().WithMany()
+                .HasForeignKey(x => x.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<GitHubIssueSubscription>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.RepositoryId, x.ChannelId }).IsUnique();
+            entity.Property(x => x.IncludeLabels).IsRequired(false);
+            entity.Property(x => x.ExcludeLabels).IsRequired(false);
             entity.HasOne<GitHubTrackedRepository>().WithMany()
                 .HasForeignKey(x => x.RepositoryId).OnDelete(DeleteBehavior.Cascade);
         });
