@@ -250,10 +250,7 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
-        var subscriptions = await _db.GitHubIssueSubscriptions
-            .Where(x => x.RepositoryId == tracked.Id)
-            .OrderBy(x => x.ChannelId)
-            .ToListAsync();
+        var subscriptions = await LoadIssueSubscriptionsAsync(tracked.Id);
         if (subscriptions.Count == 0)
         {
             await FollowupAsync($"ℹ `{tracked.FullName}` has no filtered issue channels.");
@@ -267,6 +264,16 @@ public class GitHubModule : InteractionModuleBase<SocketInteractionContext>
             return $"• <#{x.ChannelId}> — {include}; {exclude}";
         });
         await FollowupAsync($"**Issue filters for `{tracked.FullName}`**\n{string.Join("\n", lines)}");
+    }
+
+    internal async Task<List<GitHubIssueSubscription>> LoadIssueSubscriptionsAsync(int repositoryId)
+    {
+        var subscriptions = await _db.GitHubIssueSubscriptions
+            .AsNoTracking()
+            .Where(x => x.RepositoryId == repositoryId)
+            .ToListAsync();
+        subscriptions.Sort((left, right) => left.ChannelId.CompareTo(right.ChannelId));
+        return subscriptions;
     }
 
     [SlashCommand("add-workflow", "Monitor a specific workflow in a channel")]
